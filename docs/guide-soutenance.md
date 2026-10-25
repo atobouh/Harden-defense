@@ -71,7 +71,7 @@ Mesures faites pendant le développement sur un banc d'essai simulé (Kali dans 
 |---|---|---|
 | Scan de ports (500 ports) | passée, 0/500 sans réponse | étouffée : 440/500 sans réponse (mais 2 ports ouverts entrevus) |
 | Bruteforce SSH (15 connexions) | 15/15 répondues | 5/15 répondues |
-| Flood ICMP (60 pings) | 0 % de pertes | environ 67 % de pertes |
+| Flood ICMP (60 pings) | 0 % de pertes | environ 50 % de pertes |
 | Injection SQL | HTTP 200 | aucune réponse (connexion coupée) |
 | Trafic normal (ping, web, SSH) | 3/3 | 3/3 : **aucun faux positif** |
 

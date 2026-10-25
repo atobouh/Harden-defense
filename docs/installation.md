@@ -1,5 +1,12 @@
 # Installer Harden Defense sur ton ordinateur
 
+> **Trois façons de suivre ce guide, au choix :**
+> - la **vidéo** : [`docs/video/installation.mp4`](video/installation.mp4) (7 minutes, sous-titrée en français) ;
+> - le **guide illustré** : [`docs/guide-installation.html`](guide-installation.html) (à ouvrir dans le navigateur : commandes à copier en un clic, et tes valeurs à saisir une fois) ou sa version PDF [`docs/guide-installation.pdf`](guide-installation.pdf) ;
+> - ce document, ci-dessous.
+>
+> La vidéo est tournée sur un laboratoire simulé : les commandes sont exactement celles à taper sur tes machines. Les écrans de VirtualBox y sont montrés par des schémas.
+
 Deux façons de l'utiliser. Commence par la **A** (10 minutes), elle te montre tout de suite à quoi ça ressemble.
 Passe à la **B** pour le vrai laboratoire (1 à 2 heures la première fois).
 
@@ -128,6 +135,7 @@ l'application réessaie toute seule et garde les textes intégrés en attendant.
 |---|---|
 | `python` introuvable sous Windows | Réinstalle Python en cochant « Add Python to PATH », ou utilise `py` à la place de `python`. |
 | Le dashboard est vide (mode B) | Vérifie `sudo ./scripts/lab.sh status` et que `run_app.sh` tourne. Lance une attaque depuis Kali. |
+| Le script d'attaque dit « Le scan n'a pas pu s'exécuter » | Installe nmap (`sudo apt install nmap`). Sans `sudo` sans mot de passe, Kali utilise un scan par connexion : c'est normal. |
 | Kali n'atteint pas Ubuntu | `ping 192.168.56.xxx` depuis Kali. Vérifie que les deux machines ont la carte 2 en *Réseau privé hôte*. |
 | L'ordinateur n'atteint pas le dashboard | Utilise l'IP de la 2e carte d'Ubuntu (`ip a`), pas celle du NAT (10.0.2.x). |
 | « Clé refusée » | Recopie la clé en entier, sans espace. Crée-en une nouvelle dans AI Studio si besoin. |

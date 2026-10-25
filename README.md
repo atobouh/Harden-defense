@@ -22,7 +22,7 @@ en direct **la différence entre un IDS (qui prévient) et un IPS (qui bloque)**
 | `scripts/` | Installation et pilotage du labo (`install_defender.sh`, `lab.sh`, `run_app.sh`…) |
 | `kali/attack.sh` | Les 4 attaques à lancer depuis Kali |
 | `harden/` | L'application Python : collecteur, base SQL, IA, Telegram, dashboard |
-| `docs/` | `installation.md` (pas à pas sur ton ordinateur), `ids-vs-ips.md` (le concept), `guide-soutenance.md` (comment tout expliquer) |
+| `docs/` | `installation.md` + `guide-installation.html/.pdf` + `video/` (installer pas à pas), `ids-vs-ips.md` (le concept), `guide-soutenance.md` (comment tout expliquer) |
 
 ## Ce qu'on détecte
 
@@ -34,6 +34,8 @@ en direct **la différence entre un IDS (qui prévient) et un IPS (qui bloque)**
 | Injection SQL | `curl` avec `UNION SELECT` / `OR 1=1` | contenu de la requête HTTP |
 
 ## Installation
+
+> **Première fois ?** Trois façons de suivre le pas à pas, au choix (10 minutes pour voir le dashboard, 1 à 2 heures pour le laboratoire complet) : la **vidéo** [docs/video/installation.mp4](docs/video/installation.mp4), le **guide illustré** [docs/guide-installation.html](docs/guide-installation.html) (ou son [PDF](docs/guide-installation.pdf)), ou le texte [docs/installation.md](docs/installation.md).
 
 ### 0. Les deux machines (VirtualBox)
 
