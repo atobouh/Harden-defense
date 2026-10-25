@@ -17,19 +17,24 @@ echo "snort snort/interface string $IFACE"        | debconf-set-selections
 echo "snort snort/address_range string $HOME_NET" | debconf-set-selections
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y snort suricata iptables python3 python3-pip
+# apache2 + openssh-server = les services que Kali va attaquer (web et SSH) ; python3-venv = pour le dashboard
+apt-get install -y snort suricata iptables python3 python3-pip python3-venv apache2 openssh-server
 
 # On lance nous-mêmes les moteurs (voir scripts/lab.sh) : on coupe les services auto
 systemctl disable --now snort suricata 2>/dev/null || true
 
 echo "[*] Configuration de Snort (IDS)..."
 install -m 644 "$REPO_DIR/config/snort/local.rules" /etc/snort/rules/local.rules
+# On ne garde que NOS règles : on désactive les règles standard d'Ubuntu (trop de bruit pour une démo)
+sed -i -E '/^include \$RULE_PATH\/local\.rules/! s|^(include \$RULE_PATH/.+\.rules)|# \1|' /etc/snort/snort.conf
 grep -q 'include $RULE_PATH/local.rules' /etc/snort/snort.conf \
   || echo 'include $RULE_PATH/local.rules' >> /etc/snort/snort.conf
 
 echo "[*] Configuration de Suricata (IPS)..."
 install -d /var/lib/suricata/rules
 install -m 644 "$REPO_DIR/config/suricata/local.rules" /var/lib/suricata/rules/local.rules
+# On n'utilise QUE nos règles : on retire le gros fichier standard (non téléchargé -> Suricata refuserait de démarrer)
+sed -i '/^  - suricata.rules/d' /etc/suricata/suricata.yaml
 grep -q -- '- local.rules' /etc/suricata/suricata.yaml \
   || sed -i '/^rule-files:/a\  - local.rules' /etc/suricata/suricata.yaml
 sed -i "s|^\( *HOME_NET:\).*|\1 \"[$HOME_NET]\"|" /etc/suricata/suricata.yaml
@@ -39,4 +44,7 @@ suricata -T -c /etc/suricata/suricata.yaml -v >/dev/null 2>&1 && echo "    Suric
 snort -T -c /etc/snort/snort.conf -i "$IFACE" >/dev/null 2>&1 && echo "    Snort    : OK" || echo "    Snort    : ERREUR (lance: sudo snort -T -c /etc/snort/snort.conf -i $IFACE)"
 
 echo "$IFACE" > "$REPO_DIR/.iface"
-echo "[+] Terminé. Étape suivante :  sudo ./scripts/lab.sh ips"
+echo "[+] Sondes prêtes. Étapes suivantes :"
+echo "      1) ./scripts/install_app.sh        (dashboard, une seule fois, SANS sudo)"
+echo "      2) sudo ./scripts/lab.sh ids       (ou ips)"
+echo "      3) ./scripts/run_app.sh            (dans un autre terminal)"

@@ -7,7 +7,7 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 IFACE="$(cat "$REPO_DIR/.iface" 2>/dev/null || ip route show default | awk '{print $5; exit}')"
-RUN=/run/harden; mkdir -p "$RUN" /var/log/snort /var/log/suricata
+RUN=/run/harden; mkdir -p "$RUN"; chmod 755 "$RUN" /var/log/snort /var/log/suricata
 
 stop_all() {
   for p in snort suricata; do
@@ -15,13 +15,16 @@ stop_all() {
     rm -f "$RUN/$p.pid"
   done
   pkill -x snort 2>/dev/null || true
-  pkill -x suricata 2>/dev/null || true
+  pkill -f 'suricata -D' 2>/dev/null || true
+  sleep 1
   iptables -D INPUT  -j NFQUEUE --queue-num 0 --queue-bypass 2>/dev/null || true
   iptables -D OUTPUT -j NFQUEUE --queue-num 0 --queue-bypass 2>/dev/null || true
 }
 
 start_snort() {
-  snort -D -q -A fast -c /etc/snort/snort.conf -i "$IFACE" -l /var/log/snort
+  # -k none : ne pas ignorer les paquets dont la somme de contrôle semble fausse. Sur une VM, la carte réseau
+  # virtuelle ne la calcule souvent pas : sans ce réglage Snort devient "muet" sans aucun message d'erreur.
+  snort -D -q -A fast -k none -c /etc/snort/snort.conf -i "$IFACE" -l /var/log/snort
   sleep 1; pgrep -x snort | head -1 > "$RUN/snort.pid" || true
 }
 
@@ -29,6 +32,7 @@ case "${1:-}" in
   ids)
     stop_all; start_snort
     suricata -D -c /etc/suricata/suricata.yaml -i "$IFACE" --pidfile "$RUN/suricata.pid"
+    echo ids > "$RUN/mode"; chmod 644 "$RUN/mode"
     echo "[+] Mode IDS : Snort et Suricata observent et alertent, rien n'est bloqué." ;;
   ips)
     stop_all; start_snort
@@ -37,13 +41,15 @@ case "${1:-}" in
     iptables -I INPUT  -j NFQUEUE --queue-num 0 --queue-bypass
     iptables -I OUTPUT -j NFQUEUE --queue-num 0 --queue-bypass
     suricata -D -c /etc/suricata/suricata.yaml -q 0 --pidfile "$RUN/suricata.pid"
+    echo ips > "$RUN/mode"; chmod 644 "$RUN/mode"
     echo "[+] Mode IPS : Suricata BLOQUE les attaques (drop). Snort reste en simple alerte." ;;
   stop)
-    stop_all; echo "[+] Tout est arrêté, pare-feu remis à l'état normal." ;;
+    stop_all; echo stopped > "$RUN/mode"; chmod 644 "$RUN/mode"; echo "[+] Tout est arrêté, pare-feu remis à l'état normal." ;;
   status)
     echo "Interface : $IFACE"
-    pgrep -x snort    >/dev/null && echo "Snort    : actif" || echo "Snort    : arrêté"
-    pgrep -x suricata >/dev/null && echo "Suricata : actif" || echo "Suricata : arrêté"
+    is_up() { [ -f "$RUN/$1.pid" ] && kill -0 "$(cat "$RUN/$1.pid")" 2>/dev/null; }
+    is_up snort    && echo "Snort    : actif" || echo "Snort    : arrêté"
+    is_up suricata && echo "Suricata : actif" || echo "Suricata : arrêté"
     iptables -S INPUT | grep -q NFQUEUE && echo "Mode     : IPS (NFQUEUE)" || echo "Mode     : IDS / arrêté" ;;
   *) echo "Usage : sudo $0 {ids|ips|stop|status}"; exit 1 ;;
 esac

@@ -1,5 +1,7 @@
 # Harden Defense - règles Snort 2.9 (IDS : ALERTE seulement, ne bloque jamais)
 # Mêmes 4 attaques que Suricata, pour pouvoir comparer.
+# Les règles SQL lisent le paquet brut (pas http_uri) : Snort, passif, détecte ainsi même si un IPS jette
+# la requête avant que le serveur ne l'acquitte (sinon il ne la reconstitue jamais).
 
 alert tcp any any -> $HOME_NET any (msg:"HD Scan de ports SYN"; flags:S; detection_filter:track by_src, count 20, seconds 5; classtype:attempted-recon; sid:1000001; rev:1;)
 
@@ -7,6 +9,6 @@ alert tcp any any -> $HOME_NET 22 (msg:"HD Bruteforce SSH"; flags:S; detection_f
 
 alert icmp any any -> $HOME_NET any (msg:"HD Flood ICMP"; itype:8; detection_filter:track by_src, count 20, seconds 5; classtype:attempted-dos; sid:1000003; rev:1;)
 
-alert tcp any any -> $HOME_NET $HTTP_PORTS (msg:"HD Injection SQL (UNION SELECT)"; flow:to_server,established; content:"union"; nocase; http_uri; content:"select"; nocase; http_uri; classtype:web-application-attack; sid:1000004; rev:1;)
+alert tcp any any -> $HOME_NET $HTTP_PORTS (msg:"HD Injection SQL (UNION SELECT)"; flow:to_server; content:"union"; nocase; content:"select"; nocase; classtype:web-application-attack; sid:1000004; rev:1;)
 
-alert tcp any any -> $HOME_NET $HTTP_PORTS (msg:"HD Injection SQL (OR 1=1)"; flow:to_server,established; pcre:"/(\x27|%27)\s*(or|%20or)\s*(\x27|%27)?1(\x27|%27)?\s*=\s*(\x27|%27)?1/Ui"; classtype:web-application-attack; sid:1000005; rev:1;)
+alert tcp any any -> $HOME_NET $HTTP_PORTS (msg:"HD Injection SQL (OR 1=1)"; flow:to_server; pcre:"/(%27|\x27)(%20|\s|\+)*or(%20|\s|\+)+(%27|\x27)?[0-9](%27|\x27)?(%20|\s|\+)*=/i"; classtype:web-application-attack; sid:1000005; rev:1;)
