@@ -8,6 +8,18 @@ REPORT="${3:-}"
 
 R=$'\e[31m'; G=$'\e[32m'; B=$'\e[1m'; D=$'\e[2m'; N=$'\e[0m'
 
+reachable() {   # la cible répond-elle (ping, ou connexion web / SSH) ?
+  ping -c 1 -W 2 "$TARGET" >/dev/null 2>&1 && return 0
+  for port in 80 22; do timeout 2 bash -c "exec 3<>/dev/tcp/$TARGET/$port" 2>/dev/null && return 0; done
+  return 1
+}
+if ! reachable; then
+  echo "${R}${B}Impossible de joindre $TARGET.${N}"
+  echo "Vérifie que : l'IP d'Ubuntu est la bonne (commande ip a sur Ubuntu), les deux machines sont sur le même réseau privé hôte,"
+  echo "et que le laboratoire tourne (sudo ./scripts/lab.sh status sur Ubuntu)."
+  exit 1
+fi
+
 report() {   # report SCENARIO PASSED(1/0) "détail"
   if [ "$2" = 1 ]; then echo "   → ${G}${B}ATTAQUE PASSÉE${N} (rien ne l'a arrêtée) — $3"
   else                  echo "   → ${R}${B}ATTAQUE BLOQUÉE${N} — $3"; fi
@@ -34,8 +46,16 @@ legit() {
 }
 
 scan() {
-  echo "${B}[1/4] Scan de ports${N} ${D}(nmap -sS, 500 ports)${N}"
-  out="$(nmap -sS -Pn -T4 -p 1-500 --max-retries 1 --host-timeout 90s "$TARGET" 2>/dev/null)"
+  echo "${B}[1/4] Scan de ports${N} ${D}(nmap, 500 ports)${N}"
+  command -v nmap >/dev/null || { echo "   ${R}nmap est introuvable : installe-le (sudo apt install nmap).${N}"; echo; return; }
+  # Le scan "SYN" demande les droits administrateur. Sans eux, on utilise le scan par connexion (même effet pour notre règle).
+  if [ "$(id -u)" = 0 ]; then scan_cmd="nmap -sS"
+  elif sudo -n true 2>/dev/null; then scan_cmd="sudo nmap -sS"
+  else scan_cmd="nmap -sT"; echo "   ${D}(pas de sudo sans mot de passe : scan par connexion à la place du scan SYN)${N}"; fi
+  out="$($scan_cmd -Pn -T4 -p 1-500 --max-retries 1 --host-timeout 90s "$TARGET" 2>&1)"
+  if ! echo "$out" | grep -q "Nmap done"; then
+    echo "   ${R}Le scan n'a pas pu s'exécuter :${N} $(echo "$out" | grep -v '^$' | head -2 | tr '\n' ' ')"; echo; return
+  fi
   if echo "$out" | grep -q 'are in state: filtered'; then filtered=500
   else filtered="$(echo "$out" | grep -o '[0-9]* filtered' | head -1 | grep -o '[0-9]*')"; fi
   filtered="${filtered:-0}"
