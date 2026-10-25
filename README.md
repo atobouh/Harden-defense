@@ -5,7 +5,7 @@ en direct **la différence entre un IDS (qui prévient) et un IPS (qui bloque)**
 
 ![Dashboard en mode protection](docs/dashboard.png)
 ![Dashboard en mode surveillance](docs/dashboard-ids.png)
-<sub>Les deux modes, avec des données de démonstration (`python -m harden.demo`). La page se lit sans connaissance technique : un message d'état, puis un tableau où chaque attaque change de colonne selon qu'elle a été arrêtée ou non.</sub>
+<sub>Les deux modes, avec des données de démonstration (`python -m harden.demo`). Affichage progressif : on voit d'abord la situation, puis l'utilisateur choisit ce qu'il veut approfondir (Attaques, Alertes, Sources, Gardiens). Sur téléphone, les onglets sont en bas de l'écran.</sub>
 
 ```
   Kali Linux (attaquant)  ──►  Ubuntu (défenseur)

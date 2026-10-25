@@ -22,6 +22,8 @@ const ICONS = {
   "door": '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="15" cy="12" r="1"/>',
   "key": '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',
   "pulse": '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+  "board": '<rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="13" rx="1.5"/>',
+  "bell": '<path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 21h4"/>',
   "database": '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
 };
 const icon = (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -146,15 +148,37 @@ function renderChart(timeline) {
 
 /* ---------- 2. kanban : les cartes changent de colonne (animation FLIP) ---------- */
 const colEls = {}, cardEls = {};
+const openCards = new Set();          // cartes dépliées par l'utilisateur
+const colChoice = {};                 // colonnes ouvertes/fermées par l'utilisateur (accordéon mobile)
+const narrow = matchMedia("(max-width: 960px)");
 function buildBoard() {
   $("board").innerHTML = COLUMNS.map((c) => `
     <section class="col" data-col="${c.id}" aria-label="${esc(c.title)}">
-      <div class="col-h"><span class="col-ico">${icon(c.icon)}</span>
-        <h3>${esc(c.title)}<small>${esc(c.sub)}</small></h3><span class="count">0</span></div>
+      <button class="col-h" type="button" aria-expanded="true">
+        <span class="col-ico">${icon(c.icon)}</span>
+        <h3>${esc(c.title)}<small>${esc(c.sub)}</small></h3><span class="count">0</span><span class="chev">${icon("chevron")}</span></button>
       <div class="cards"></div><p class="empty">${esc(c.empty)}</p>
     </section>`).join("");
-  COLUMNS.forEach((c) => { colEls[c.id] = document.querySelector(`.col[data-col="${c.id}"]`); });
+  COLUMNS.forEach((c) => {
+    colEls[c.id] = document.querySelector(`.col[data-col="${c.id}"]`);
+    colEls[c.id].querySelector(".col-h").addEventListener("click", () => {
+      if (!narrow.matches) return;                      // sur grand écran, les 3 colonnes restent visibles
+      colChoice[c.id] = colEls[c.id].classList.contains("closed");
+      applyColumns();
+    });
+  });
 }
+let defaultCol = "passed";
+function applyColumns() {
+  COLUMNS.forEach((c) => {
+    const open = !narrow.matches || (c.id in colChoice ? colChoice[c.id] : c.id === defaultCol);
+    colEls[c.id].classList.toggle("closed", !open);
+    colEls[c.id].style.order = narrow.matches && c.id === defaultCol ? -1 : "";
+    colEls[c.id].querySelector(".col-h").setAttribute("aria-expanded", String(open));
+  });
+}
+narrow.addEventListener("change", applyColumns);
+
 function verdictCell(label, iconName, result) {
   const kind = !result ? "" : result.success ? "passed" : "stopped";
   const text = !result ? "pas testé" : result.success ? "passée" : "arrêtée";
@@ -163,13 +187,39 @@ function verdictCell(label, iconName, result) {
     <small>${label}</small><b>${icon(ico)}${text}</b></div>`;
 }
 function cardHTML(a, now) {
-  const m = ATTACKS[a.key];
+  const m = ATTACKS[a.key], open = openCards.has(a.key);
   const when = a.last_ts ? ` · <span data-ts="${esc(a.last_ts)}">${esc(ago(a.last_ts, now))}</span>` : "";
   const hist = a.ids || a.ips
-    ? `<div class="a-hist">${verdictCell("Surveillance", "eye", a.ids)}${verdictCell("Protection", "shield", a.ips)}</div>` : "";
-  return `<div class="a-top"><span class="aico">${icon(m.icon)}</span>
-      <div><h4>${esc(m.title)}</h4><p>${esc(m.tech)}${when}</p></div></div>${hist}`;
+    ? `<div class="a-hist">${verdictCell("Surveillance", "eye", a.ids)}${verdictCell("Protection", "shield", a.ips)}</div>`
+    : `<p class="muted">Pas encore testée.</p>`;
+  return `<button class="a-head" type="button" aria-expanded="${open}"><span class="aico">${icon(m.icon)}</span>
+      <span class="a-txt"><h4>${esc(m.title)}</h4><p>${esc(m.tech)}${when}</p></span><span class="chev">${icon("chevron")}</span></button>
+    <div class="a-more" ${open ? "" : "hidden"}>${hist}</div>`;
 }
+function updateExpandAll() {
+  const all = Object.keys(ATTACKS).every((k) => openCards.has(k));
+  $("expand-all").textContent = all ? "Tout replier" : "Tout déplier";
+}
+$("board").addEventListener("click", (e) => {
+  const head = e.target.closest(".a-head");
+  if (!head) return;
+  const key = head.closest(".acard").dataset.key;
+  const open = !openCards.has(key);
+  open ? openCards.add(key) : openCards.delete(key);
+  head.setAttribute("aria-expanded", String(open));
+  head.nextElementSibling.hidden = !open;
+  updateExpandAll();
+});
+$("expand-all").addEventListener("click", () => {
+  const all = Object.keys(ATTACKS).every((k) => openCards.has(k));
+  Object.keys(ATTACKS).forEach((k) => (all ? openCards.delete(k) : openCards.add(k)));
+  document.querySelectorAll(".acard").forEach((el) => {
+    const open = openCards.has(el.dataset.key);
+    el.querySelector(".a-head").setAttribute("aria-expanded", String(open));
+    el.querySelector(".a-more").hidden = !open;
+  });
+  updateExpandAll();
+});
 function renderBoard(d, first) {
   if (!colEls.waiting) buildBoard();
   const before = {};
@@ -177,16 +227,20 @@ function renderBoard(d, first) {
   const counts = { waiting: 0, passed: 0, stopped: 0 };
   d.attacks.forEach((a) => {
     const el = cardEls[a.key] || (cardEls[a.key] = Object.assign(document.createElement("article"), { className: "acard" }));
+    el.dataset.key = a.key;
     el.innerHTML = cardHTML(a, d.now);
     colEls[a.state].querySelector(".cards").appendChild(el);
     counts[a.state]++;
   });
+  defaultCol = ["passed", "stopped", "waiting"].find((c) => counts[c] > 0) || "passed";
   COLUMNS.forEach((c) => {
     colEls[c.id].querySelector(".count").textContent = counts[c.id];
     colEls[c.id].querySelector(".empty").hidden = counts[c.id] > 0;
     colEls[c.id].classList.toggle("is-empty", counts[c.id] === 0);
   });
-  if (first || reduceMotion) return;
+  applyColumns();
+  updateExpandAll();
+  if (first || reduceMotion || narrow.matches) return;
   Object.keys(cardEls).forEach((k) => {
     if (!before[k]) return;
     const after = cardEls[k].getBoundingClientRect();
@@ -220,8 +274,8 @@ function renderFeed(d) {
     return `
     <details class="ev" data-id="${a.id}" data-a="${blocked ? "blocked" : "alert"}" ${openEvents.has(a.id) ? "open" : ""}>
       <summary><span class="ev-dot">${icon(blocked ? "shield-check" : "eye")}</span>
-        <span class="ev-text"><b>${esc(ENGINE[a.engine])}</b> a ${blocked ? "arrêté" : "repéré"} ${esc(m.what)}</span>
-        <time data-ts="${esc(a.last_ts || a.ts)}">${esc(ago(a.last_ts || a.ts, d.now))}</time><span class="chev">${icon("chevron")}</span></summary>
+        <span class="ev-text"><b>${esc(ENGINE[a.engine])}</b> a ${blocked ? "arrêté" : "repéré"} ${esc(m.what)}
+        <time data-ts="${esc(a.last_ts || a.ts)}">${esc(ago(a.last_ts || a.ts, d.now))}</time></span><span class="chev">${icon("chevron")}</span></summary>
       <div class="ev-body">${ai}
         <dl class="facts">
           <div><dt>Venant de</dt><dd>${esc(a.src_ip)}</dd></div><div><dt>Visant</dt><dd>${esc(dst)}</dd></div>
@@ -261,6 +315,62 @@ function renderGuardians(e) {
       <div class="num"><b>${fmt(e.suricata.blocked)}</b><span>arrêtées</span></div></div>`;
 }
 
+/* ---------- navigation : une vue à la fois ---------- */
+const TABS = ["attaques", "alertes", "sources", "gardiens"];
+let currentTab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "attaques";
+let seenAlerts = null, alertTotal = 0;
+function setTab(name, { scroll = false } = {}) {
+  currentTab = name;
+  TABS.forEach((t) => {
+    const on = t === name;
+    $("tab-" + t).setAttribute("aria-selected", String(on));
+    $("tab-" + t).tabIndex = on ? 0 : -1;
+    $("panel-" + t).hidden = !on;
+  });
+  if (name === "alertes") seenAlerts = alertTotal;
+  try { history.replaceState(null, "", "#" + name); } catch (e) { /* sans importance */ }
+  updateBadges();
+  if (scroll) {
+    const top = $("panels").getBoundingClientRect().top + scrollY - 16;
+    if (scrollY > top) scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
+  }
+}
+$("tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tab]");
+  if (b) setTab(b.dataset.tab, { scroll: true });
+});
+$("tabs").addEventListener("keydown", (e) => {           // flèches gauche/droite entre les onglets
+  const i = TABS.indexOf(currentTab);
+  const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: TABS.length - 1 }[e.key];
+  if (next === undefined) return;
+  e.preventDefault();
+  setTab(TABS[(next + TABS.length) % TABS.length]);
+  $("tab-" + currentTab).focus();
+});
+function badge(id, text, cls) {
+  const el = $(id);
+  el.hidden = !text;
+  el.textContent = text === true ? "" : text || "";
+  el.className = "t-badge" + (cls ? " " + cls : "");
+}
+function updateBadges() {
+  if (!lastData) return;
+  const passed = lastData.attacks.filter((a) => a.state === "passed").length;
+  badge("b-attaques", passed ? String(passed) : "", "warn");
+  badge("b-sources", lastData.top_attackers.length ? String(lastData.top_attackers.length) : "");
+  const fresh = seenAlerts !== null && alertTotal > seenAlerts && currentTab !== "alertes";
+  badge("b-alertes", fresh ? true : "", "dot");
+}
+
+/* ---------- activité : repliée par défaut ---------- */
+$("act-toggle").addEventListener("click", () => {
+  const open = $("act-toggle").getAttribute("aria-expanded") !== "true";
+  $("act-toggle").setAttribute("aria-expanded", String(open));
+  $("act-panel").hidden = !open;
+  $("act-label").textContent = open ? "Masquer l'activité" : "Voir l'activité";
+  if (open && lastData) { chartSig = ""; renderChart(lastData.timeline); }
+});
+
 /* ---------- boucle ---------- */
 let firstLoad = true;
 function refreshTimes(now) {
@@ -272,11 +382,14 @@ let lastData = null;
 function render(d) {
   lastData = d;
   renderHero(d);
-  renderChart(d.timeline);
+  if (!$("act-panel").hidden) renderChart(d.timeline);
   renderBoard(d, firstLoad);
   renderFeed(d);
   renderSources(d.top_attackers);
   renderGuardians(d.engines);
+  alertTotal = d.engines.snort.incidents + d.engines.suricata.incidents;
+  if (seenAlerts === null || currentTab === "alertes") seenAlerts = alertTotal;
+  updateBadges();
   refreshTimes(d.now);
   $("live").className = "live on";
   $("updated").textContent = "En direct · " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -292,6 +405,7 @@ async function tick() {
     $("updated").textContent = "Connexion perdue…";
   }
 }
-addEventListener("resize", () => { if (lastData) renderChart(lastData.timeline); });
+addEventListener("resize", () => { if (lastData && !$("act-panel").hidden) renderChart(lastData.timeline); });
+setTab(currentTab);
 tick();
 setInterval(tick, 3000);

@@ -44,11 +44,14 @@ SELECT scenario, mode, success, detail FROM attack_results ORDER BY ts;
 
 ## 4. Lire le dashboard (30 secondes, sans jargon)
 
-- **Le grand titre** répond à « suis-je en sécurité ? » : vert = tout est arrêté, orange = des attaques sont passées.
-- **Le mode actif** : *Surveillance* (on observe et on prévient) ou *Protection* (on bloque).
-- **Les colonnes** : *Pas encore vue* → *Repérée, mais passée* → *Arrêtée*. Une carte = un type d'attaque.
-- **Les alertes** : une phrase par alerte ; un clic ouvre l'explication, le conseil et le détail technique.
-- **Les deux gardiens** : Snort le guetteur (IDS), Suricata le videur (IPS).
+Le dashboard montre d'abord l'essentiel, le reste s'ouvre **à la demande** :
+
+- **Au premier regard** : un grand titre qui répond à « suis-je en sécurité ? » (vert = tout est arrêté, orange = des attaques sont passées), le mode actif (*Surveillance* : on observe et on prévient ; *Protection* : on bloque) et trois chiffres. Le graphique d'activité est derrière « Voir l'activité ».
+- **Quatre vues, une seule à la fois** (onglets ; en bas de l'écran sur téléphone) :
+  - **Attaques** : un tableau de trois colonnes, *Pas encore vue → Repérée, mais passée → Arrêtée*. Une carte = un type d'attaque ; on la touche pour voir ses deux verdicts (Surveillance, Protection). Un badge orange signale les attaques passées.
+  - **Alertes** : une phrase par alerte ; un clic ouvre l'explication, le conseil et le détail technique. Un point bleu signale une nouvelle alerte.
+  - **Sources** : les machines à l'origine des attaques.
+  - **Gardiens** : Snort le guetteur (IDS) et Suricata le videur (IPS).
 
 ## 5. Démonstration en 5 minutes
 

@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <title>Harden Defense</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z'/%3E%3C/svg%3E">
@@ -19,7 +19,7 @@
     <div class="live" id="live"><i></i><span id="updated">Connexion…</span></div>
   </header>
 
-  <!-- 1. LA RÉPONSE À « SUIS-JE EN SÉCURITÉ ? » -->
+  <!-- NIVEAU 1 : la situation. C'est tout ce qu'on voit au premier regard. -->
   <section class="card hero" id="hero" data-tone="idle" aria-labelledby="hero-title">
     <div class="hero-main">
       <div class="hero-icon" id="hero-icon" aria-hidden="true"></div>
@@ -44,6 +44,12 @@
         <div class="stat" data-kind="passed"><dt><span class="sico" data-i="alert"></span>Passées</dt><dd id="s-passed">0</dd><small>repérées, non arrêtées</small></div>
         <div class="stat" data-kind="sources"><dt><span class="sico" data-i="monitor"></span>Sources</dt><dd id="s-sources">0</dd><small>machines attaquantes</small></div>
       </dl>
+      <button class="toggle" id="act-toggle" type="button" aria-expanded="false" aria-controls="act-panel">
+        <span id="act-label">Voir l'activité</span><span class="chev" data-i="chevron"></span>
+      </button>
+    </div>
+
+    <div class="act-panel" id="act-panel" hidden>
       <figure class="activity">
         <figcaption>
           <span>Activité des 30 dernières minutes</span>
@@ -55,37 +61,41 @@
     </div>
   </section>
 
-  <!-- 2. LE KANBAN : OÙ EN EST CHAQUE ATTAQUE ? -->
-  <section aria-labelledby="board-title">
-    <div class="sec-head">
-      <h2 id="board-title">Où en est chaque attaque ?</h2>
-      <p>Chaque carte change de colonne quand la protection évolue.</p>
-    </div>
-    <div class="board" id="board"></div>
-  </section>
+  <!-- NIVEAU 2 : une seule vue à la fois, choisie par l'utilisateur -->
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Choisir ce que tu veux voir">
+    <button role="tab" id="tab-attaques" aria-controls="panel-attaques" data-tab="attaques"><span class="t-ico" data-i="board"></span><span class="t-label">Attaques</span><span class="t-badge" id="b-attaques" hidden></span></button>
+    <button role="tab" id="tab-alertes" aria-controls="panel-alertes" data-tab="alertes"><span class="t-ico" data-i="bell"></span><span class="t-label">Alertes</span><span class="t-badge" id="b-alertes" hidden></span></button>
+    <button role="tab" id="tab-sources" aria-controls="panel-sources" data-tab="sources"><span class="t-ico" data-i="monitor"></span><span class="t-label">Sources</span><span class="t-badge" id="b-sources" hidden></span></button>
+    <button role="tab" id="tab-gardiens" aria-controls="panel-gardiens" data-tab="gardiens"><span class="t-ico" data-i="shield-check"></span><span class="t-label">Gardiens</span></button>
+  </nav>
 
-  <!-- 3. HISTORIQUE + CONTEXTE -->
-  <div class="two">
-    <section class="card" aria-labelledby="feed-title">
-      <div class="card-head">
-        <h2 id="feed-title">Dernières alertes</h2>
-        <span class="muted" id="ai-src"></span>
+  <main class="panels" id="panels">
+    <section role="tabpanel" id="panel-attaques" aria-labelledby="tab-attaques">
+      <div class="sec-head">
+        <div><h2>Où en est chaque attaque ?</h2><p>Touche une carte pour voir le détail.<span class="hide-sm"> Elle change de colonne quand la protection évolue.</span></p></div>
+        <button class="link" id="expand-all" type="button">Tout déplier</button>
       </div>
-      <div id="feed" class="feed"></div>
-      <button class="more" id="more" type="button" hidden></button>
+      <div class="board" id="board"></div>
     </section>
 
-    <aside class="stack">
-      <section class="card" aria-labelledby="src-title">
-        <div class="card-head"><h2 id="src-title">Qui attaque ?</h2></div>
-        <div id="sources" class="sources"></div>
-      </section>
-      <section class="card" aria-labelledby="guard-title">
-        <div class="card-head"><h2 id="guard-title">Les deux gardiens</h2></div>
-        <div id="guardians" class="guardians"></div>
-      </section>
-    </aside>
-  </div>
+    <section role="tabpanel" id="panel-alertes" aria-labelledby="tab-alertes" hidden>
+      <div class="sec-head"><div><h2>Dernières alertes</h2><p>Touche une alerte pour comprendre ce qui s'est passé.</p></div><span class="muted" id="ai-src"></span></div>
+      <div class="card narrow">
+        <div id="feed" class="feed"></div>
+        <button class="more" id="more" type="button" hidden></button>
+      </div>
+    </section>
+
+    <section role="tabpanel" id="panel-sources" aria-labelledby="tab-sources" hidden>
+      <div class="sec-head"><div><h2>Qui attaque ?</h2><p>Les machines à l'origine des attaques, et ce qui a été arrêté.</p></div></div>
+      <div class="card narrow"><div id="sources" class="sources"></div></div>
+    </section>
+
+    <section role="tabpanel" id="panel-gardiens" aria-labelledby="tab-gardiens" hidden>
+      <div class="sec-head"><div><h2>Les deux gardiens</h2><p>Deux outils surveillent le même trafic. Un seul peut bloquer.</p></div></div>
+      <div class="card narrow"><div id="guardians" class="guardians"></div></div>
+    </section>
+  </main>
 
   <footer>Harden Defense · Snort + Suricata · mise à jour automatique</footer>
 </div>
