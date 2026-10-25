@@ -1,0 +1,16 @@
+# Harden Defense - règles Suricata (même détection que Snort, mais en "drop")
+# En mode IPS (nfqueue) : les paquets sont BLOQUÉS.
+# En mode IDS (af-packet) : "drop" se comporte comme "alert".
+
+# 1. Scan de ports (SYN scan type nmap) : 20 SYN en 5 s depuis la même IP
+drop tcp any any -> $HOME_NET any (msg:"HD Scan de ports SYN"; flags:S; threshold:type both, track by_src, count 20, seconds 5; classtype:attempted-recon; sid:1000001; rev:1;)
+
+# 2. Bruteforce SSH : 5 connexions en 30 s
+drop tcp any any -> $HOME_NET 22 (msg:"HD Bruteforce SSH"; flags:S; threshold:type both, track by_src, count 5, seconds 30; classtype:attempted-admin; sid:1000002; rev:1;)
+
+# 3. Flood ICMP (ping flood) : 20 pings en 5 s
+drop icmp any any -> $HOME_NET any (msg:"HD Flood ICMP"; itype:8; threshold:type both, track by_src, count 20, seconds 5; classtype:attempted-dos; sid:1000003; rev:1;)
+
+# 4. Injection SQL dans une URL HTTP
+drop http any any -> $HOME_NET any (msg:"HD Injection SQL (UNION SELECT)"; http.uri; content:"union"; nocase; content:"select"; nocase; classtype:web-application-attack; sid:1000004; rev:1;)
+drop http any any -> $HOME_NET any (msg:"HD Injection SQL (OR 1=1)"; http.uri; content:"or"; nocase; pcre:"/(\x27|%27)\s*(or|%20or)\s*(\x27|%27)?1(\x27|%27)?\s*=\s*(\x27|%27)?1/Ui"; classtype:web-application-attack; sid:1000005; rev:1;)
