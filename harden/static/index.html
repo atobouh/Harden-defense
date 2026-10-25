@@ -3,96 +3,92 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
 <title>Harden Defense</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2322d3ee' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div class="glow" aria-hidden="true"></div>
-<main class="wrap">
+<div class="page">
 
-  <header class="masthead">
+  <header class="bar">
     <div class="brand">
-      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></svg>
-      <div>
-        <h1>Harden Defense</h1>
-        <p>Détection et prévention d'intrusions en temps réel</p>
-      </div>
+      <span class="logo" id="logo"></span>
+      <b>Harden Defense</b>
     </div>
-    <div class="status">
-      <span id="mode" class="pill pill-muted">Mode …</span>
-      <span class="live" id="live"><i></i><span id="updated">connexion…</span></span>
-    </div>
+    <div class="live" id="live"><i></i><span id="updated">Connexion…</span></div>
   </header>
 
-  <section class="flow card" aria-label="Schéma du laboratoire">
-    <div class="node">
-      <div class="node-ico bad"><svg viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div>
-      <b>Kali Linux</b><span>L'attaquant</span>
-    </div>
-    <div class="arrow" aria-hidden="true"><svg viewBox="0 0 60 12"><path d="M0 6h54M48 1l6 5-6 5"/></svg></div>
-    <div class="sensors">
-      <div class="sensor snort"><i></i><div><b>Snort · IDS</b><span>Observe et <u>alerte</u></span></div></div>
-      <div class="sensor suri"><i></i><div><b>Suricata · IPS</b><span>Observe et <u>bloque</u></span></div></div>
-    </div>
-    <div class="arrow" aria-hidden="true"><svg viewBox="0 0 60 12"><path d="M0 6h54M48 1l6 5-6 5"/></svg></div>
-    <div class="node">
-      <div class="node-ico good"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
-      <b>Ubuntu</b><span>La cible protégée</span>
-    </div>
-  </section>
-
-  <section class="kpis" aria-label="Chiffres clés">
-    <article class="card kpi"><span class="lbl">Incidents détectés</span><b id="k-inc">0</b><small id="k-inc-sub">0 paquets analysés</small></article>
-    <article class="card kpi k-good"><span class="lbl">Bloqués</span><b id="k-blk">0</b><small>arrêtés par l'IPS</small></article>
-    <article class="card kpi k-warn"><span class="lbl">Détectés seulement</span><b id="k-det">0</b><small>signalés, mais passés</small></article>
-    <article class="card kpi"><span class="lbl">Adresses attaquantes</span><b id="k-att">0</b><small>sources distinctes</small></article>
-  </section>
-
-  <section class="grid2">
-    <article class="card">
-      <div class="card-h"><h2>Activité des 30 dernières minutes</h2>
-        <div class="legend"><span><i class="c-snort"></i>Snort</span><span><i class="c-suri"></i>Suricata</span></div></div>
-      <div id="chart" class="chart"></div>
-    </article>
-    <article class="card">
-      <div class="card-h"><h2>Les deux sondes</h2></div>
-      <div class="vs">
-        <div class="vs-col"><span class="tag t-snort">IDS · Snort</span>
-          <b id="e-snort-n">0</b><small>incidents signalés</small>
-          <div class="vs-line"><span>bloqués</span><em id="e-snort-b">0</em></div></div>
-        <div class="vs-col"><span class="tag t-suri">IPS · Suricata</span>
-          <b id="e-suri-n">0</b><small>incidents traités</small>
-          <div class="vs-line"><span>bloqués</span><em id="e-suri-b" class="good">0</em></div></div>
+  <!-- 1. LA RÉPONSE À « SUIS-JE EN SÉCURITÉ ? » -->
+  <section class="card hero" id="hero" data-tone="idle" aria-labelledby="hero-title">
+    <div class="hero-main">
+      <div class="hero-icon" id="hero-icon" aria-hidden="true"></div>
+      <div class="hero-text">
+        <p class="eyebrow">Situation actuelle</p>
+        <h1 id="hero-title">Chargement…</h1>
+        <p class="lead" id="hero-sub"></p>
       </div>
-      <p class="hint">L'IDS prévient, l'IPS empêche. Seul Suricata, placé sur le chemin du trafic, peut jeter les paquets.</p>
-    </article>
-  </section>
+      <div class="mode" role="group" aria-label="Mode actif (lecture seule)">
+        <span class="eyebrow">Mode actif</span>
+        <div class="seg" id="seg">
+          <span data-m="ids" id="seg-ids"></span>
+          <span data-m="ips" id="seg-ips"></span>
+        </div>
+        <small id="mode-help"></small>
+      </div>
+    </div>
 
-  <section class="card">
-    <div class="card-h"><h2>Même attaque, deux résultats</h2><span class="sub">Ce que Kali a réellement obtenu dans chaque mode</span></div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Attaque</th><th class="num">Snort<br><small>alertes</small></th><th class="num">Suricata<br><small>alertes</small></th>
-          <th class="num">Suricata<br><small>bloquées</small></th><th>En mode IDS</th><th>En mode IPS</th></tr></thead>
-        <tbody id="cmp"></tbody>
-      </table>
+    <div class="hero-foot">
+      <dl class="stats" aria-label="Chiffres clés">
+        <div class="stat" data-kind="stopped"><dt><span class="sico" data-i="shield-check"></span>Arrêtées</dt><dd id="s-stopped">0</dd><small id="s-stopped-sub">attaques arrêtées</small></div>
+        <div class="stat" data-kind="passed"><dt><span class="sico" data-i="alert"></span>Passées</dt><dd id="s-passed">0</dd><small>repérées, non arrêtées</small></div>
+        <div class="stat" data-kind="sources"><dt><span class="sico" data-i="monitor"></span>Sources</dt><dd id="s-sources">0</dd><small>machines attaquantes</small></div>
+      </dl>
+      <figure class="activity">
+        <figcaption>
+          <span>Activité des 30 dernières minutes</span>
+          <span class="legend"><span><i class="k-stopped"></i>Arrêtées</span><span><i class="k-passed"></i>Passées</span></span>
+        </figcaption>
+        <div id="chart" class="chart"></div>
+        <div id="tip" class="tip" role="presentation" hidden></div>
+      </figure>
     </div>
   </section>
 
-  <section class="grid2 wide-left">
-    <article class="card">
-      <div class="card-h"><h2>Alertes en direct</h2><span class="sub" id="ai-src"></span></div>
-      <div id="feed" class="feed" role="log" aria-live="polite"></div>
-    </article>
-    <article class="card">
-      <div class="card-h"><h2>Principales sources d'attaque</h2></div>
-      <div id="sources" class="sources"></div>
-    </article>
+  <!-- 2. LE KANBAN : OÙ EN EST CHAQUE ATTAQUE ? -->
+  <section aria-labelledby="board-title">
+    <div class="sec-head">
+      <h2 id="board-title">Où en est chaque attaque ?</h2>
+      <p>Chaque carte change de colonne quand la protection évolue.</p>
+    </div>
+    <div class="board" id="board"></div>
   </section>
 
-  <footer>Harden Defense · Snort + Suricata · SQLite · Rafraîchissement automatique toutes les 3 s</footer>
-</main>
+  <!-- 3. HISTORIQUE + CONTEXTE -->
+  <div class="two">
+    <section class="card" aria-labelledby="feed-title">
+      <div class="card-head">
+        <h2 id="feed-title">Dernières alertes</h2>
+        <span class="muted" id="ai-src"></span>
+      </div>
+      <div id="feed" class="feed"></div>
+      <button class="more" id="more" type="button" hidden></button>
+    </section>
+
+    <aside class="stack">
+      <section class="card" aria-labelledby="src-title">
+        <div class="card-head"><h2 id="src-title">Qui attaque ?</h2></div>
+        <div id="sources" class="sources"></div>
+      </section>
+      <section class="card" aria-labelledby="guard-title">
+        <div class="card-head"><h2 id="guard-title">Les deux gardiens</h2></div>
+        <div id="guardians" class="guardians"></div>
+      </section>
+    </aside>
+  </div>
+
+  <footer>Harden Defense · Snort + Suricata · mise à jour automatique</footer>
+</div>
 <script src="/static/app.js"></script>
 </body>
 </html>

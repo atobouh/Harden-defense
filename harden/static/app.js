@@ -1,137 +1,287 @@
 "use strict";
+/* Harden Defense : l'interface ne montre que ce qu'un non-technicien comprend ; le détail est derrière un clic. */
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = (n) => Number(n || 0).toLocaleString("fr-FR");
+const plural = (n, one, many) => (n > 1 ? many : one);
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/* ---------- icônes (traits fins, héritent la couleur du texte) ---------- */
 const ICONS = {
-  scan: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
-  ssh: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
-  icmp: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
-  sqli: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
+  "shield": '<path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/>',
+  "shield-check": '<path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/><path d="M9 12l2.2 2.2L15.5 10"/>',
+  "shield-alert": '<path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/><path d="M12 8.5v4M12 16h.01"/>',
+  "alert": '<path d="M12 3.5l9 16H3z"/><path d="M12 10v4M12 17h.01"/>',
+  "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  "x": '<path d="M6 6l12 12M18 6L6 18"/>',
+  "monitor": '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  "eye": '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  "chevron": '<path d="M6 9l6 6 6-6"/>',
+  "sparkle": '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>',
+  "door": '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="15" cy="12" r="1"/>',
+  "key": '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',
+  "pulse": '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+  "database": '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
 };
+const icon = (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+document.querySelectorAll("[data-i]").forEach((el) => { el.innerHTML = icon(el.dataset.i); });
+$("logo").innerHTML = icon("shield-check");
 
-const seen = new Set();
-let firstLoad = true;
+/* ---------- le vocabulaire : zéro jargon en première ligne ---------- */
+const ATTACKS = {
+  scan: { icon: "door", title: "Quelqu'un teste les portes", tech: "Scan de ports", what: "un test de portes" },
+  ssh:  { icon: "key", title: "Quelqu'un devine un mot de passe", tech: "Bruteforce SSH", what: "une devinette de mot de passe" },
+  icmp: { icon: "pulse", title: "Quelqu'un sature la machine", tech: "Flood ICMP", what: "une saturation de la machine" },
+  sqli: { icon: "database", title: "Quelqu'un vise la base de données", tech: "Injection SQL", what: "une attaque sur la base de données" },
+};
+const COLUMNS = [
+  { id: "waiting", icon: "clock", title: "Pas encore vue", sub: "En attente d'une attaque", empty: "Toutes les attaques ont déjà été observées." },
+  { id: "passed", icon: "alert", title: "Repérée, mais passée", sub: "Détectée, rien ne l'a arrêtée", empty: "Aucune attaque n'est passée." },
+  { id: "stopped", icon: "shield-check", title: "Arrêtée", sub: "Bloquée avant d'entrer", empty: "Rien n'a encore été arrêté." },
+];
+const ENGINE = { snort: "Snort", suricata: "Suricata" };
 
 function ago(iso, now) {
   const s = Math.max(0, Math.round((new Date(now) - new Date(iso)) / 1000));
-  if (s < 5) return "à l'instant";
+  if (s < 10) return "à l'instant";
   if (s < 60) return `il y a ${s} s`;
   if (s < 3600) return `il y a ${Math.floor(s / 60)} min`;
   if (s < 86400) return `il y a ${Math.floor(s / 3600)} h`;
   return new Date(iso).toLocaleDateString("fr-FR");
 }
 
-function setNumber(id, value) {
-  const el = $(id), text = fmt(value);
-  if (el.textContent !== text) el.textContent = text;
-}
-
-function renderMode(mode) {
-  const el = $("mode");
-  const map = {
-    ips: ["pill pill-ips", "MODE IPS · prévention active"],
-    ids: ["pill pill-ids", "MODE IDS · détection seule"],
-    stopped: ["pill pill-muted", "Sondes arrêtées"],
-  };
-  const [cls, label] = map[mode] || ["pill pill-muted", "Mode inconnu"];
-  el.className = cls;
-  el.textContent = label;
-}
-
-function renderChart(timeline) {
-  const W = 720, H = 210, padL = 28, padB = 24, padT = 8;
-  const max = Math.max(4, ...timeline.map((t) => t.snort + t.suricata));
-  const top = Math.ceil(max / 4) * 4;
-  const bw = (W - padL) / timeline.length;
-  const y = (v) => padT + (H - padT - padB) * (1 - v / top);
-  let out = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Alertes par minute">`;
-  for (let i = 0; i <= 4; i++) {
-    const v = (top / 4) * i, yy = y(v);
-    out += `<line class="grid" x1="${padL}" x2="${W}" y1="${yy}" y2="${yy}"/><text x="${padL - 6}" y="${yy + 3.5}" text-anchor="end">${v}</text>`;
+/* ---------- 1. héros : la réponse à « suis-je en sécurité ? » ---------- */
+function renderHero(d) {
+  const states = d.attacks.map((a) => a.state);
+  const stopped = states.filter((s) => s === "stopped").length;
+  const passed = states.filter((s) => s === "passed").length;
+  let tone, iconName, title, sub;
+  if (stopped + passed === 0) {
+    tone = "calm"; iconName = "shield";
+    title = "Tout est calme";
+    sub = "Aucune attaque détectée pour l'instant. Lance une attaque depuis Kali pour voir la défense réagir.";
+  } else if (passed === 0) {
+    tone = "safe"; iconName = "shield-check";
+    title = "Tout est sous contrôle";
+    sub = `${stopped} ${plural(stopped, "type d'attaque a été arrêté", "types d'attaques ont été arrêtés")} avant d'atteindre la machine.`;
+  } else if (d.mode === "ips") {
+    tone = "warn"; iconName = "shield-alert";
+    title = "Presque tout est sous contrôle";
+    sub = `${passed} ${plural(passed, "attaque a été repérée", "attaques ont été repérées")} mais pas arrêtée${passed > 1 ? "s" : ""}.`;
+  } else {
+    tone = "warn"; iconName = "shield-alert";
+    title = `${plural(passed, "Une attaque est passée", "Des attaques sont passées")}`;
+    sub = "Elles ont été repérées, mais en mode Surveillance rien ne les arrête. Passe en mode Protection pour les bloquer.";
   }
+  $("hero").dataset.tone = tone;
+  $("hero-icon").innerHTML = icon(iconName);
+  $("hero-title").textContent = title;
+  $("hero-sub").textContent = sub;
+
+  $("seg-ids").innerHTML = `${icon("eye")}Surveillance`;
+  $("seg-ips").innerHTML = `${icon("shield-check")}Protection`;
+  $("seg-ids").classList.toggle("on", d.mode === "ids");
+  $("seg-ips").classList.toggle("on", d.mode === "ips");
+  $("mode-help").textContent = {
+    ids: "On observe et on prévient, sans rien bloquer.",
+    ips: "Les attaques repérées sont bloquées automatiquement.",
+  }[d.mode] || "Le mode s'affichera dès que les sondes démarrent.";
+
+  $("s-stopped").textContent = fmt(stopped);
+  $("s-passed").textContent = fmt(passed);
+  $("s-sources").textContent = fmt(d.totals.sources);
+  $("s-stopped-sub").textContent = `sur ${d.attacks.length} types d'attaques`;
+}
+
+/* ---------- graphique : barres fines, une couleur par issue ---------- */
+function barPath(x, y, w, h, r) {            // arrondi 4px en haut, base droite
+  r = Math.min(r, h, w / 2);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+let chartSig = "";
+function renderChart(timeline) {
+  const W = Math.max(280, Math.round($("chart").clientWidth) || 560);
+  const sig = JSON.stringify(timeline) + W;
+  if (sig === chartSig) return;
+  chartSig = sig;
+  const H = 124, padB = 22, padT = 6, n = timeline.length;
+  const max = Math.max(3, ...timeline.map((t) => t.stopped + t.passed));
+  const slot = W / n, bw = Math.min(14, slot - 6), plotH = H - padB - padT;
+  const y = (v) => padT + plotH * (1 - v / max);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Attaques par minute sur les 30 dernières minutes">`;
+  const empty = timeline.every((t) => !t.stopped && !t.passed);
+  if (!empty) svg += `<line class="gl" x1="0" x2="${W}" y1="${y(max)}" y2="${y(max)}"/><text x="0" y="${y(max) - 4}">${max}</text>`;
+  svg += `<line class="base" x1="0" x2="${W}" y1="${H - padB}" y2="${H - padB}"/>`;
   timeline.forEach((t, i) => {
-    const x = padL + i * bw + 2, w = Math.max(2, bw - 4);
-    const hs = (H - padT - padB) * (t.snort / top), hu = (H - padT - padB) * (t.suricata / top);
-    const base = H - padB;
-    if (t.suricata) out += `<rect class="bar" x="${x}" y="${base - hu}" width="${w}" height="${hu}" rx="3" fill="var(--suri)"><title>${esc(t.minute.slice(11))} · Suricata : ${t.suricata}</title></rect>`;
-    if (t.snort) out += `<rect class="bar" x="${x}" y="${base - hu - hs}" width="${w}" height="${hs}" rx="3" fill="var(--snort)"><title>${esc(t.minute.slice(11))} · Snort : ${t.snort}</title></rect>`;
-    if (i % 5 === 0) out += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${esc(new Date(t.minute + ":00Z").toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }))}</text>`;
+    const x = i * slot + (slot - bw) / 2, base = H - padB;
+    const hs = plotH * (t.stopped / max), hp = plotH * (t.passed / max), gap = t.stopped && t.passed ? 2 : 0;
+    svg += `<g class="col" data-i="${i}">`;
+    if (t.stopped) svg += `<path class="bar" d="${barPath(x, base - hs, bw, hs, t.passed ? 0 : 4)}" fill="var(--stopped)"/>`;
+    if (t.passed) svg += `<path class="bar" d="${barPath(x, base - hs - gap - hp, bw, hp, 4)}" fill="var(--passed)"/>`;
+    svg += `<rect class="hit" x="${i * slot}" y="0" width="${slot}" height="${H - padB}"/></g>`;
   });
-  if (timeline.every((t) => !t.snort && !t.suricata))
-    out += `<text class="empty" x="${W / 2}" y="${H / 2}">Aucune alerte sur cette période — lance une attaque depuis Kali</text>`;
-  $("chart").innerHTML = out + "</svg>";
+  svg += `<text x="0" y="${H - 4}">il y a 30 min</text><text x="${W}" y="${H - 4}" text-anchor="end">maintenant</text>`;
+  if (empty)
+    svg += `<text class="none" x="${W / 2}" y="${H / 2 - 4}">Aucune activité pour l'instant</text>`;
+  svg += "</svg>";
+  const rows = timeline.filter((t) => t.stopped || t.passed).map((t) =>
+    `<tr><td>${esc(t.minute.slice(11))}</td><td>${t.stopped}</td><td>${t.passed}</td></tr>`).join("");
+  $("chart").innerHTML = svg + `<table class="sr"><caption>Attaques par minute</caption><thead><tr><th>Heure (UTC)</th><th>Arrêtées</th><th>Passées</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+  const tip = $("tip"), fig = $("chart").parentElement;
+  $("chart").querySelectorAll(".col").forEach((g) => {
+    g.addEventListener("mouseenter", () => {
+      const t = timeline[+g.dataset.i];
+      const local = new Date(t.minute + ":00Z").toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      tip.innerHTML = `<b>${esc(local)}</b><br>${t.stopped} arrêtée${t.stopped > 1 ? "s" : ""} · ${t.passed} passée${t.passed > 1 ? "s" : ""}`;
+      const r = g.getBoundingClientRect(), f = fig.getBoundingClientRect();
+      tip.style.left = `${r.left - f.left + r.width / 2}px`;
+      tip.style.top = `${r.top - f.top + 6}px`;
+      tip.hidden = false;
+    });
+    g.addEventListener("mouseleave", () => { tip.hidden = true; });
+  });
 }
 
-function verdict(r) {
-  if (!r) return '<span class="res res-none">non testé</span>';
-  return r.success
-    ? `<span class="res res-pass" title="${esc(r.detail)}"><i></i>Attaque passée</span>`
-    : `<span class="res res-stop" title="${esc(r.detail)}"><i></i>Attaque bloquée</span>`;
+/* ---------- 2. kanban : les cartes changent de colonne (animation FLIP) ---------- */
+const colEls = {}, cardEls = {};
+function buildBoard() {
+  $("board").innerHTML = COLUMNS.map((c) => `
+    <section class="col" data-col="${c.id}" aria-label="${esc(c.title)}">
+      <div class="col-h"><span class="col-ico">${icon(c.icon)}</span>
+        <h3>${esc(c.title)}<small>${esc(c.sub)}</small></h3><span class="count">0</span></div>
+      <div class="cards"></div><p class="empty">${esc(c.empty)}</p>
+    </section>`).join("");
+  COLUMNS.forEach((c) => { colEls[c.id] = document.querySelector(`.col[data-col="${c.id}"]`); });
+}
+function verdictCell(label, iconName, result) {
+  const kind = !result ? "" : result.success ? "passed" : "stopped";
+  const text = !result ? "pas testé" : result.success ? "passée" : "arrêtée";
+  const ico = !result ? "clock" : result.success ? "alert" : "shield-check";
+  return `<div class="cell ${kind}" title="${esc(result ? result.detail : "Pas encore testé dans ce mode")}">
+    <small>${label}</small><b>${icon(ico)}${text}</b></div>`;
+}
+function cardHTML(a, now) {
+  const m = ATTACKS[a.key];
+  const when = a.last_ts ? ` · <span data-ts="${esc(a.last_ts)}">${esc(ago(a.last_ts, now))}</span>` : "";
+  const hist = a.ids || a.ips
+    ? `<div class="a-hist">${verdictCell("Surveillance", "eye", a.ids)}${verdictCell("Protection", "shield", a.ips)}</div>` : "";
+  return `<div class="a-top"><span class="aico">${icon(m.icon)}</span>
+      <div><h4>${esc(m.title)}</h4><p>${esc(m.tech)}${when}</p></div></div>${hist}`;
+}
+function renderBoard(d, first) {
+  if (!colEls.waiting) buildBoard();
+  const before = {};
+  Object.keys(cardEls).forEach((k) => { before[k] = cardEls[k].getBoundingClientRect(); });
+  const counts = { waiting: 0, passed: 0, stopped: 0 };
+  d.attacks.forEach((a) => {
+    const el = cardEls[a.key] || (cardEls[a.key] = Object.assign(document.createElement("article"), { className: "acard" }));
+    el.innerHTML = cardHTML(a, d.now);
+    colEls[a.state].querySelector(".cards").appendChild(el);
+    counts[a.state]++;
+  });
+  COLUMNS.forEach((c) => {
+    colEls[c.id].querySelector(".count").textContent = counts[c.id];
+    colEls[c.id].querySelector(".empty").hidden = counts[c.id] > 0;
+    colEls[c.id].classList.toggle("is-empty", counts[c.id] === 0);
+  });
+  if (first || reduceMotion) return;
+  Object.keys(cardEls).forEach((k) => {
+    if (!before[k]) return;
+    const after = cardEls[k].getBoundingClientRect();
+    const dx = before[k].left - after.left, dy = before[k].top - after.top;
+    if (Math.abs(dx) + Math.abs(dy) > 2)
+      cardEls[k].animate([{ transform: `translate(${dx}px,${dy}px)`, zIndex: 2 }, { transform: "none", zIndex: 2 }],
+        { duration: 650, easing: "cubic-bezier(.2,.8,.2,1)" });
+  });
 }
 
-function renderCompare(attacks) {
-  $("cmp").innerHTML = attacks.map((a) => `
-    <tr>
-      <td><div class="atk"><span class="atk-ico"><svg viewBox="0 0 24 24">${ICONS[a.key]}</svg></span>${esc(a.name)}</div></td>
-      <td class="num ${a.snort ? "" : "dim"}">${fmt(a.snort)}</td>
-      <td class="num ${a.suricata ? "" : "dim"}">${fmt(a.suricata)}</td>
-      <td class="num ${a.blocked ? "" : "dim"}" style="${a.blocked ? "color:var(--good)" : ""}">${fmt(a.blocked)}</td>
-      <td>${verdict(a.ids)}</td><td>${verdict(a.ips)}</td>
-    </tr>`).join("");
-}
-
-function renderFeed(recent, now) {
-  if (!recent.length) {
-    $("feed").innerHTML = '<div class="empty-state">En attente d\'attaques…<br>Depuis Kali : <code>./attack.sh IP_UBUNTU all</code></div>';
+/* ---------- 3. alertes : une phrase simple, le détail au clic ---------- */
+const openEvents = new Set();
+let feedSig = "", showAll = false;
+function renderFeed(d) {
+  const sig = JSON.stringify(d.recent.map((a) => [a.id, a.hits, a.last_ts])) + showAll;
+  $("ai-src").textContent = d.ai_source === "claude" ? "Expliquées par l'IA" : "";
+  if (sig === feedSig) return;
+  feedSig = sig;
+  if (!d.recent.length) {
+    $("feed").innerHTML = `<div class="empty">Aucune alerte pour l'instant.<br>Elles apparaîtront ici dès qu'une attaque sera repérée.</div>`;
+    $("more").hidden = true;
     return;
   }
-  $("feed").innerHTML = recent.map((a) => {
-    const blocked = a.action === "blocked";
-    const fresh = !firstLoad && !seen.has(a.id);
-    seen.add(a.id);
-    const dots = Array.from({ length: 5 }, (_, i) => `<i class="${i < (a.level || 0) ? "on" : ""}"></i>`).join("");
+  const list = showAll ? d.recent : d.recent.slice(0, 6);
+  $("feed").innerHTML = list.map((a) => {
+    const blocked = a.action === "blocked", m = ATTACKS[a.key] || { what: "une activité suspecte" };
+    const dst = a.dst_port ? `${a.dst_ip}:${a.dst_port}` : a.dst_ip;
     const ai = a.summary ? `
-      <div class="ai"><div class="ai-h"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>
-        Analyse ${a.source === "claude" ? "IA" : "automatique"}<span class="dots" title="Gravité ${a.level}/5">${dots}</span></div>
-        <div>${esc(a.summary)}</div><div><em>Conseil :</em> ${esc(a.advice)}</div></div>` : "";
+      <div class="ev-ai"><div class="ai-h">${icon("sparkle")}ANALYSE${a.source === "claude" ? " PAR L'IA" : ""}</div>
+        <p>${esc(a.summary)}</p><p><b>Que faire ?</b> ${esc(a.advice)}</p></div>` : "";
     return `
-      <article class="alert ${blocked ? "blocked" : ""} ${fresh ? "fresh" : ""}">
-        <div class="alert-h"><b>${esc(a.name)}</b>
-          <span class="badge ${a.engine === "snort" ? "b-snort" : "b-suri"}">${a.engine === "snort" ? "Snort · IDS" : "Suricata · IPS"}</span>
-          <span class="badge ${blocked ? "b-blocked" : "b-detected"}">${blocked ? "Bloquée" : "Détectée"}</span>
-          <span class="when">${esc(ago(a.last_ts || a.ts, now))}</span></div>
-        <div class="meta"><code>${esc(a.src_ip)}</code> → <code>${esc(a.dst_ip)}${a.dst_port ? ":" + esc(a.dst_port) : ""}</code> · ${esc(a.proto)} · ${fmt(a.hits)} paquet${a.hits > 1 ? "s" : ""}</div>
-        ${ai}
-      </article>`;
+    <details class="ev" data-id="${a.id}" data-a="${blocked ? "blocked" : "alert"}" ${openEvents.has(a.id) ? "open" : ""}>
+      <summary><span class="ev-dot">${icon(blocked ? "shield-check" : "eye")}</span>
+        <span class="ev-text"><b>${esc(ENGINE[a.engine])}</b> a ${blocked ? "arrêté" : "repéré"} ${esc(m.what)}</span>
+        <time data-ts="${esc(a.last_ts || a.ts)}">${esc(ago(a.last_ts || a.ts, d.now))}</time><span class="chev">${icon("chevron")}</span></summary>
+      <div class="ev-body">${ai}
+        <dl class="facts">
+          <div><dt>Venant de</dt><dd>${esc(a.src_ip)}</dd></div><div><dt>Visant</dt><dd>${esc(dst)}</dd></div>
+          <div><dt>Paquets</dt><dd>${fmt(a.hits)}</dd></div><div class="wide"><dt>Règle déclenchée</dt><dd>${esc(a.signature)}</dd></div>
+        </dl></div>
+    </details>`;
+  }).join("");
+  $("feed").querySelectorAll("details").forEach((el) => el.addEventListener("toggle", () => {
+    el.open ? openEvents.add(+el.dataset.id) : openEvents.delete(+el.dataset.id);
+  }));
+  const extra = d.recent.length - 6;
+  $("more").hidden = extra <= 0;
+  $("more").textContent = showAll ? "Réduire la liste" : `Afficher ${extra} alerte${extra > 1 ? "s" : ""} de plus`;
+}
+$("more").addEventListener("click", () => { showAll = !showAll; feedSig = ""; tick(); });
+
+/* ---------- colonne de droite ---------- */
+function renderSources(list) {
+  if (!list.length) { $("sources").innerHTML = `<div class="empty">Personne n'a attaqué pour l'instant.</div>`; return; }
+  $("sources").innerHTML = list.map((s) => {
+    const done = Math.min(s.stopped, s.attempts), pct = (done / s.attempts) * 100;
+    return `<div class="src">
+      <div class="src-h"><span class="avatar">${icon("monitor")}</span><code>${esc(s.src_ip)}</code>
+        <span class="n">${fmt(s.attempts)} ${plural(s.attempts, "tentative", "tentatives")}</span></div>
+      <div class="split" role="img" aria-label="${done} arrêtée(s) sur ${s.attempts}">
+        ${done ? `<i class="s" style="width:${pct}%"></i>` : ""}${s.attempts > done ? `<i class="p" style="width:${100 - pct}%"></i>` : ""}</div>
+      <small>${done} arrêtée${done > 1 ? "s" : ""} sur ${s.attempts}</small></div>`;
   }).join("");
 }
-
-function renderTop(list) {
-  if (!list.length) { $("sources").innerHTML = '<div class="empty-state">Aucune source pour l\'instant.</div>'; return; }
-  const max = Math.max(...list.map((s) => s.packets), 1);
-  $("sources").innerHTML = list.map((s) => `
-    <div class="src"><div class="src-h"><code>${esc(s.src_ip)}</code><span>${fmt(s.packets)} paquet${s.packets > 1 ? "s" : ""} · ${fmt(s.incidents)} incident${s.incidents > 1 ? "s" : ""}</span></div>
-      <div class="meter"><i style="width:${Math.max(4, (s.packets / max) * 100)}%"></i></div></div>`).join("");
+function renderGuardians(e) {
+  $("guardians").innerHTML = `
+    <div class="g snort"><span class="g-ico">${icon("eye")}</span>
+      <div><h3>Snort <span class="tag">IDS</span></h3><p>Le guetteur : voit tout, ne bloque rien</p></div>
+      <div class="num"><b>${fmt(e.snort.incidents)}</b><span>repérées</span></div></div>
+    <div class="g suri"><span class="g-ico">${icon("shield-check")}</span>
+      <div><h3>Suricata <span class="tag">IPS</span></h3><p>Le videur : peut stopper les attaques</p></div>
+      <div class="num"><b>${fmt(e.suricata.blocked)}</b><span>arrêtées</span></div></div>`;
 }
 
+/* ---------- boucle ---------- */
+let firstLoad = true;
+function refreshTimes(now) {
+  document.querySelectorAll("time[data-ts], .a-foot [data-ts]").forEach((el) => {
+    if (el.dataset.ts) el.textContent = ago(el.dataset.ts, now);
+  });
+}
+let lastData = null;
 function render(d) {
-  renderMode(d.mode);
-  const t = d.totals;
-  setNumber("k-inc", t.incidents); setNumber("k-blk", t.blocked); setNumber("k-det", t.detected); setNumber("k-att", t.attackers);
-  $("k-inc-sub").textContent = `${fmt(t.packets)} paquets analysés`;
-  setNumber("e-snort-n", d.engines.snort.incidents); setNumber("e-snort-b", d.engines.snort.blocked);
-  setNumber("e-suri-n", d.engines.suricata.incidents); setNumber("e-suri-b", d.engines.suricata.blocked);
+  lastData = d;
+  renderHero(d);
   renderChart(d.timeline);
-  renderCompare(d.attacks);
-  renderFeed(d.recent, d.now);
-  renderTop(d.top_attackers);
-  $("ai-src").textContent = d.ai_source === "claude" ? "Analysées par l'IA (Claude)" : "Explications intégrées";
+  renderBoard(d, firstLoad);
+  renderFeed(d);
+  renderSources(d.top_attackers);
+  renderGuardians(d.engines);
+  refreshTimes(d.now);
   $("live").className = "live on";
-  $("updated").textContent = "en direct · " + new Date().toLocaleTimeString("fr-FR");
+  $("updated").textContent = "En direct · " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   firstLoad = false;
 }
-
 async function tick() {
   try {
     const r = await fetch("/api/summary", { cache: "no-store" });
@@ -139,8 +289,9 @@ async function tick() {
     render(await r.json());
   } catch (e) {
     $("live").className = "live";
-    $("updated").textContent = "connexion perdue…";
+    $("updated").textContent = "Connexion perdue…";
   }
 }
+addEventListener("resize", () => { if (lastData) renderChart(lastData.timeline); });
 tick();
 setInterval(tick, 3000);

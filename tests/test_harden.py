@@ -11,6 +11,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from harden import analyzer, collector, config, db, parsers, telegram  # noqa: E402
 
+try:
+    from harden import dashboard
+except ImportError:          # Flask pas installé : les tests du dashboard sont ignorés
+    dashboard = None
+
 SNORT_LINE = ("10/25-17:40:59.002045  [**] [1:1000001:1] HD Scan de ports SYN [**] "
               "[Classification: Attempted Information Leak] [Priority: 2] {TCP} 10.77.0.2:33773 -> 10.77.0.1:17")
 SNORT_ICMP = ("10/25-17:41:00.100000  [**] [1:1000003:1] HD Flood ICMP [**] "
@@ -185,6 +190,41 @@ class AnalyzerTests(unittest.TestCase):
         r = analyzer.get_analysis(self.conn, self.alert)
         self.assertEqual(r["source"], "local")
         self.assertIsNone(self.conn.execute("SELECT 1 FROM analyses").fetchone())   # pas mis en cache : on réessaiera
+
+
+@unittest.skipIf(dashboard is None, "Flask n'est pas installé (utilise .venv/bin/python)")
+class DashboardStateTests(unittest.TestCase):
+    """L'état de chaque attaque : pas encore vue / repérée mais passée / arrêtée."""
+
+    def setUp(self):
+        self.conn = db.connect(":memory:")
+
+    def add(self, engine, sid, action, ts):
+        db.insert_alert(self.conn, {"ts": ts, "engine": engine, "sid": sid, "signature": "x", "category": "c",
+                                    "severity": 2, "proto": "TCP", "src_ip": "1.1.1.1", "src_port": 1,
+                                    "dst_ip": "2.2.2.2", "dst_port": 80, "action": action})
+
+    def states(self):
+        return {a["key"]: a["state"] for a in dashboard.build_summary(self.conn)["attacks"]}
+
+    def test_nothing_seen_yet(self):
+        self.assertEqual(set(self.states().values()), {"waiting"})
+
+    def test_detected_but_not_blocked_is_passed(self):
+        self.add("suricata", 1000004, "alert", "2026-10-25T10:00:00.000000Z")
+        self.assertEqual(self.states()["sqli"], "passed")
+        self.assertEqual(self.states()["scan"], "waiting")
+
+    def test_snort_alone_counts_as_passed(self):
+        self.add("snort", 1000003, "alert", "2026-10-25T10:00:00.000000Z")
+        self.assertEqual(self.states()["icmp"], "passed")
+
+    def test_blocked_is_stopped_and_latest_wins(self):
+        self.add("suricata", 1000001, "alert", "2026-10-25T10:00:00.000000Z")      # d'abord en mode IDS
+        self.add("suricata", 1000001, "blocked", "2026-10-25T10:10:00.000000Z")    # puis en mode IPS
+        self.assertEqual(self.states()["scan"], "stopped")
+        self.add("suricata", 1000001, "alert", "2026-10-25T10:20:00.000000Z")      # retour en mode IDS
+        self.assertEqual(self.states()["scan"], "passed")
 
 
 if __name__ == "__main__":

@@ -3,8 +3,9 @@
 **Un mini-SOC de laboratoire** : une machine attaque, une autre se défend, et un tableau de bord montre
 en direct **la différence entre un IDS (qui prévient) et un IPS (qui bloque)**.
 
-![Dashboard](docs/dashboard.png)
-<sub>Aperçu avec des données de démonstration (`python -m harden.demo`).</sub>
+![Dashboard en mode protection](docs/dashboard.png)
+![Dashboard en mode surveillance](docs/dashboard-ids.png)
+<sub>Les deux modes, avec des données de démonstration (`python -m harden.demo`). La page se lit sans connaissance technique : un message d'état, puis un tableau où chaque attaque change de colonne selon qu'elle a été arrêtée ou non.</sub>
 
 ```
   Kali Linux (attaquant)  ──►  Ubuntu (défenseur)
@@ -78,8 +79,8 @@ Le script lance le contrôle « trafic normal » puis les 4 attaques, dit pour c
 sudo ./scripts/lab.sh ips        # sur Ubuntu : Suricata se met à bloquer
 ```
 
-Relance `./attack.sh …` depuis Kali : le tableau « **Même attaque, deux résultats** » du dashboard se remplit
-(colonne *En mode IDS* puis colonne *En mode IPS*). C'est le cœur de la démonstration.
+Relance `./attack.sh …` depuis Kali : les cartes du dashboard **changent de colonne** : de « Repérée, mais passée » vers « Arrêtée ». Chaque carte garde
+les deux verdicts (*Surveillance* puis *Protection*). C'est le cœur de la démonstration.
 
 Autres commandes : `sudo ./scripts/lab.sh status` · `sudo ./scripts/lab.sh stop`
 

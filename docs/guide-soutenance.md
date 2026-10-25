@@ -42,15 +42,23 @@ SELECT signature, engine, action, COUNT(*) FROM alerts GROUP BY signature, engin
 SELECT scenario, mode, success, detail FROM attack_results ORDER BY ts;
 ```
 
-## 4. Démonstration en 5 minutes
+## 4. Lire le dashboard (30 secondes, sans jargon)
+
+- **Le grand titre** répond à « suis-je en sécurité ? » : vert = tout est arrêté, orange = des attaques sont passées.
+- **Le mode actif** : *Surveillance* (on observe et on prévient) ou *Protection* (on bloque).
+- **Les colonnes** : *Pas encore vue* → *Repérée, mais passée* → *Arrêtée*. Une carte = un type d'attaque.
+- **Les alertes** : une phrase par alerte ; un clic ouvre l'explication, le conseil et le détail technique.
+- **Les deux gardiens** : Snort le guetteur (IDS), Suricata le videur (IPS).
+
+## 5. Démonstration en 5 minutes
 
 1. `sudo ./scripts/lab.sh ids` puis ouvrir le dashboard. *« Mode IDS : on observe seulement. »*
 2. Sur Kali : `./attack.sh IP all http://IP:5000`. Les 4 attaques sont **passées**, mais détectées par les deux sondes.
 3. `sudo ./scripts/lab.sh ips`, relancer `attack.sh`. Les 4 attaques sont **bloquées**.
-4. Montrer le tableau « Même attaque, deux résultats », puis le message Telegram.
+4. Montrer les cartes qui ont **glissé** de « Repérée, mais passée » vers « Arrêtée » (chaque carte garde ses deux verdicts), puis le message Telegram.
 5. Conclure : *« L'IDS me dit qu'on m'attaque, l'IPS empêche l'attaque. »*
 
-## 5. Résultats mesurés (laboratoire de développement)
+## 6. Résultats mesurés (laboratoire de développement)
 
 Mesures faites pendant le développement sur un banc d'essai simulé (Kali dans un espace réseau isolé, Suricata 7.0.3, Snort 2.9.20).
 **Refais-les sur tes VM et remplace ce tableau par tes propres chiffres.**
@@ -63,7 +71,7 @@ Mesures faites pendant le développement sur un banc d'essai simulé (Kali dans 
 | Injection SQL | HTTP 200 | aucune réponse (connexion coupée) |
 | Trafic normal (ping, web, SSH) | 3/3 | 3/3 : **aucun faux positif** |
 
-## 6. Les limites : le dire soi-même est un point fort
+## 7. Les limites : le dire soi-même est un point fort
 
 - **Détection par signatures** : on ne détecte que ce qu'on a décrit. Un attaquant lent ou une attaque inconnue passe. Piste d'amélioration : détection d'anomalies par machine learning.
 - **Seuils** : l'IPS laisse passer les premiers paquets avant le seuil. Exemple vu en test : nmap sonde d'abord les ports courants (22, 80), donc il les *entrevoit* avant d'être coupé.
@@ -71,7 +79,7 @@ Mesures faites pendant le développement sur un banc d'essai simulé (Kali dans 
 - **Pas de chiffrement** : le contenu HTTPS ne peut pas être lu par ces règles.
 - **Lab, pas production** : le dashboard n'a pas d'authentification.
 
-## 7. Questions probables du jury
+## 8. Questions probables du jury
 
 **Pourquoi deux outils ?** Pour *voir* la différence entre détecter (Snort, IDS) et bloquer (Suricata, IPS) sur les mêmes attaques.
 
@@ -83,7 +91,7 @@ Mesures faites pendant le développement sur un banc d'essai simulé (Kali dans 
 
 **Qu'as-tu fait toi-même ?** Montage du labo, règles, tests des attaques, analyse des résultats. *(Le projet a été développé avec l'aide d'une IA ; dis-le franchement, et sois capable d'expliquer chaque fichier grâce à ce guide.)*
 
-## 8. Plan possible pour le rapport
+## 9. Plan possible pour le rapport
 
 1. Contexte et objectifs (IDS contre IPS) ; 2. Architecture du labo (schéma + captures VirtualBox) ;
 3. Installation et configuration (Snort, Suricata, règles) ; 4. Scénarios d'attaque ; 5. Résultats (tableau + captures du dashboard + Telegram) ;
