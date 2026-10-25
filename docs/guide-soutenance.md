@@ -26,7 +26,8 @@
 | `lab.sh` | Mode `ids` : tout le monde observe. Mode `ips` : `iptables` envoie les paquets à Suricata, qui jette les attaques | `scripts/lab.sh` |
 | Collecteur | Lit les journaux des deux sondes, les met au même format, les enregistre en SQLite. Regroupe 500 paquets d'un scan en **un incident** | `harden/collector.py`, `parsers.py`, `db.py` |
 | Base SQL | 4 tables : `alerts`, `analyses`, `attack_results`, `offsets` | `harden/db.py` |
-| IA | Explique chaque type d'attaque en français et donne un conseil. Appelée une seule fois par type (coût minimal), avec explications de secours si pas de clé | `harden/analyzer.py` |
+| IA | Explique chaque type d'attaque en français et donne un conseil. Les demandes sont groupées **par lots** (jusqu'à 20 dans une requête) pour respecter la limite gratuite ; modèle de secours, puis texte intégré si besoin. Rien n'attend l'IA. | `harden/analyzer.py` |
+| Réglages | Page qui teste puis enregistre la clé de l'IA et guide la connexion Telegram en 3 étapes ; les secrets ne sont jamais renvoyés au navigateur | `harden/dashboard.py`, `static/settings.js` |
 | Telegram | Envoie l'alerte (⛔ bloquée ou 👁 détectée) avec l'analyse | `harden/telegram.py` |
 | Dashboard | Page web qui lit la base et se rafraîchit toute seule | `harden/dashboard.py`, `static/` |
 | `attack.sh` | Lance les attaques depuis Kali et mesure si elles passent | `kali/attack.sh` |
@@ -88,7 +89,7 @@ Mesures faites pendant le développement sur un banc d'essai simulé (Kali dans 
 
 **Pourquoi un IPS peut-il être dangereux ?** Un faux positif coupe du trafic légitime. C'est pourquoi `attack.sh` commence par un contrôle de trafic normal.
 
-**Où est l'intelligence ?** L'IA analyse chaque alerte comme un analyste SOC (explication, gravité, conseil). La détection elle-même reste à base de règles ; le machine learning est la suite logique du projet.
+**Où est l'intelligence ?** L'IA (Gemini ou Claude) analyse chaque type d'alerte comme un analyste SOC (explication, gravité, conseil). Les demandes sont envoyées par lots pour rester sous la limite gratuite (15 requêtes par minute), et sans IA l'application fonctionne quand même. La détection elle-même reste à base de règles ; le machine learning est la suite logique du projet.
 
 **À quoi sert la base SQL ?** À garder l'historique et à produire les statistiques (top attaquants, comparaison des sondes).
 

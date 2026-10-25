@@ -22,7 +22,7 @@ en direct **la différence entre un IDS (qui prévient) et un IPS (qui bloque)**
 | `scripts/` | Installation et pilotage du labo (`install_defender.sh`, `lab.sh`, `run_app.sh`…) |
 | `kali/attack.sh` | Les 4 attaques à lancer depuis Kali |
 | `harden/` | L'application Python : collecteur, base SQL, IA, Telegram, dashboard |
-| `docs/` | `ids-vs-ips.md` (le concept) et `guide-soutenance.md` (comment tout expliquer) |
+| `docs/` | `installation.md` (pas à pas sur ton ordinateur), `ids-vs-ips.md` (le concept), `guide-soutenance.md` (comment tout expliquer) |
 
 ## Ce qu'on détecte
 
@@ -84,13 +84,21 @@ les deux verdicts (*Surveillance* puis *Protection*). C'est le cœur de la démo
 
 Autres commandes : `sudo ./scripts/lab.sh status` · `sudo ./scripts/lab.sh stop`
 
-## Options (facultatives)
+## Telegram et IA : la page « Réglages »
 
-Tout fonctionne sans, configure-les dans `.env` (voir `.env.example`, il explique chaque étape) :
+Tout est facultatif. Ouvre l'onglet **Réglages** du dashboard : pas de fichier à éditer.
 
-- **Telegram** : un message par alerte, avec l'analyse. Test : `.venv/bin/python -m harden.telegram test`.
-- **IA** : avec une clé API Claude, chaque type d'attaque est expliqué par l'IA (une seule fois, puis gardé en base).
-  Sans clé, des explications intégrées sont utilisées.
+![Réglages](docs/settings.png)
+
+- **Telegram, en 3 étapes guidées** : créer le bot avec @BotFather et coller le token, envoyer `/start` à son bot puis « Trouver mon compte », enfin « Envoyer un message de test ».
+- **IA (Gemini gratuit, ou Claude)** : coller la clé et cliquer « Tester et enregistrer ». Une clé qui ne fonctionne pas n'est pas enregistrée, et un message explique quoi corriger.
+- Les explications sont demandées **par lots** (jusqu'à 20 alertes dans une seule requête, 8 requêtes par minute au maximum) pour rester sous la limite gratuite. En cas de limite, l'application réessaie toute seule, bascule sur un modèle de secours, puis garde les textes intégrés : elle ne tombe jamais en panne à cause de l'IA.
+- Seuls le nom de la règle, la catégorie, le protocole et le port sont envoyés à l'IA : **jamais d'adresse IP**.
+
+**Sécurité des réglages.** Les clés sont enregistrées dans `data/settings.json` (droits 600, ignoré par git) et ne sont jamais renvoyées au navigateur.
+Elles ne se modifient que depuis la machine qui fait tourner l'application, ou depuis un autre appareil avec le **code à 6 chiffres affiché dans le terminal** au démarrage.
+
+*Avancé* : les mêmes réglages peuvent venir du fichier `.env` (voir `.env.example`) ; la page Réglages a priorité.
 
 ## Voir le dashboard sans lancer les VM
 
@@ -113,7 +121,7 @@ et `sudo ./scripts/lab.sh ips`.
 ## Sécurité
 
 - Projet **pédagogique, pour un réseau de laboratoire isolé** : le dashboard n'a pas de mot de passe. Ne l'expose pas sur internet.
-- `.env` (token Telegram, clé API) est ignoré par git : ne le publie jamais.
+- `.env` et `data/settings.json` (token Telegram, clés API) sont ignorés par git : ne les publie jamais.
 - N'attaque que **tes propres machines**.
 
 ## Problèmes fréquents
@@ -124,3 +132,4 @@ et `sudo ./scripts/lab.sh ips`.
 | Snort ne génère aucune alerte | Vérifie la carte réseau (`ip a`) et relance `install_defender.sh <carte>`. `lab.sh` lance déjà Snort avec `-k none` (sommes de contrôle ignorées : sinon, sur VM, Snort peut rester muet) |
 | Kali ne répond plus après une attaque en mode IPS | Normal : l'IPS l'a bloqué quelques secondes (les compteurs se remettent à zéro) |
 | Le dashboard est vide | `sudo ./scripts/lab.sh status`, et lance `./scripts/run_app.sh` |
+| « Clé refusée » / « Limite gratuite atteinte » | Voir la page Réglages et [docs/installation.md](docs/installation.md#ça-ne-marche-pas-) |

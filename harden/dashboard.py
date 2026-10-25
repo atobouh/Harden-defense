@@ -2,12 +2,18 @@
 
 Lancement :  python -m harden.dashboard      puis ouvrir http://IP_UBUNTU:5000
 """
+import hmac
+import json
 import os
+import re
+import secrets
+import time
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import config, db, knowledge, parsers
+from . import analyzer, config, db, knowledge, parsers, telegram
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app = Flask(__name__, static_folder=STATIC, static_url_path="/static")
@@ -153,9 +159,190 @@ def attack_result():
     return jsonify(ok=True, mode=mode)
 
 
+# ---------- page « Réglages » ----------
+# Sécurité : le dashboard n'a pas de comptes. Les réglages (clés, token) ne peuvent donc être modifiés que
+#   - depuis la machine qui fait tourner l'application (http://localhost:5000), ou
+#   - à distance avec le CODE affiché dans le terminal au démarrage.
+# Et les secrets ne sont JAMAIS renvoyés au navigateur (seulement « configuré » et les 4 derniers caractères).
+ADMIN_PIN = f"{secrets.randbelow(10 ** 6):06d}"
+LOCAL_ADDRS = ("127.0.0.1", "::1")
+_pin_fail = {"count": 0, "until": 0.0}
+
+
+def _check_access():
+    """None si autorisé, sinon (message, code HTTP)."""
+    origin = request.headers.get("Origin")
+    if origin and urlparse(origin).netloc != request.host:
+        return "Origine refusée.", 403
+    if request.remote_addr in LOCAL_ADDRS:
+        return None
+    if time.time() < _pin_fail["until"]:
+        return "Trop d'essais. Patiente une minute.", 429
+    if hmac.compare_digest(request.headers.get("X-Admin-Pin", ""), ADMIN_PIN):
+        _pin_fail["count"] = 0
+        return None
+    _pin_fail["count"] += 1
+    if _pin_fail["count"] >= 5:
+        _pin_fail.update(count=0, until=time.time() + 60)
+    return "Code de sécurité manquant ou incorrect (il est affiché dans le terminal où tourne l'application).", 403
+
+
+def _can_edit():
+    return _check_access() is None if request.remote_addr in LOCAL_ADDRS or request.headers.get("X-Admin-Pin") else False
+
+
+def _guard():
+    """Garde pour les routes qui modifient : retourne (corps JSON, None) ou (None, réponse d'erreur)."""
+    problem = _check_access()
+    if problem:
+        return None, (jsonify(ok=False, message=problem[0]), problem[1])
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify(ok=False, message="Requête invalide."), 400)
+    return data, None
+
+
+def _clean(value):
+    return re.sub(r"\s+", "", str(value or "")).strip("\"'")
+
+
+@app.get("/api/settings")
+def settings_view():
+    """État des réglages, sans aucun secret."""
+    provider = analyzer.active_provider()
+    key_name = {"gemini": "GEMINI_API_KEY", "claude": "ANTHROPIC_API_KEY"}.get(provider)
+    conn = _conn()
+    try:
+        try:
+            status = json.loads(db.get_state(conn, "ai_status", "null"))
+        except ValueError:
+            status = None
+        pending = analyzer.Worker(conn).pending_count()
+    finally:
+        conn.close()
+    tg_token = config.setting("TELEGRAM_BOT_TOKEN")
+    return jsonify(
+        can_edit=_can_edit(), needs_pin=request.remote_addr not in LOCAL_ADDRS,
+        ai={"provider": provider, "choice": config.setting("AI_PROVIDER") or "",
+            "key_set": bool(key_name and config.setting(key_name)),
+            "key_hint": config.hint(config.setting(key_name)) if key_name else "",
+            "has_gemini_key": bool(config.setting("GEMINI_API_KEY")), "has_claude_key": bool(config.setting("ANTHROPIC_API_KEY")),
+            "model": (analyzer.models_for(provider) or [""])[0],
+            "models": {"gemini": list(analyzer.GEMINI_MODELS), "claude": list(analyzer.CLAUDE_MODELS)},
+            "status": status, "pending": pending, "batch_size": analyzer.BATCH_SIZE, "max_rpm": analyzer.MAX_RPM},
+        telegram={"token_set": bool(tg_token), "token_hint": config.hint(tg_token),
+                  "bot": config.setting("TELEGRAM_BOT_NAME"), "chat_set": bool(config.setting("TELEGRAM_CHAT_ID")),
+                  "chat_name": config.setting("TELEGRAM_CHAT_NAME")})
+
+
+@app.post("/api/settings/ai")
+def settings_ai():
+    """Teste la clé (un vrai petit appel) et ne l'enregistre que si elle fonctionne."""
+    data, error = _guard()
+    if error:
+        return error
+    provider = data.get("provider")
+    if provider == "none":
+        config.save_settings({"AI_PROVIDER": "none"})
+        return jsonify(ok=True, message="IA désactivée : les explications intégrées sont utilisées.")
+    if provider not in ("gemini", "claude"):
+        return jsonify(ok=False, message="Fournisseur inconnu."), 400
+    key_name = "GEMINI_API_KEY" if provider == "gemini" else "ANTHROPIC_API_KEY"
+    model_name = "GEMINI_MODEL" if provider == "gemini" else "ANTHROPIC_MODEL"
+    key = _clean(data.get("key")) or config.setting(key_name)
+    if not key:
+        return jsonify(ok=False, message="Colle d'abord ta clé."), 400
+    if len(key) < 20 or len(key) > 300:
+        return jsonify(ok=False, message="Cette clé n'a pas la bonne longueur. Copie-la en entier."), 400
+    model = _clean(data.get("model")) or None
+    if model and not re.fullmatch(r"[A-Za-z0-9._-]{3,60}", model):
+        return jsonify(ok=False, message="Nom de modèle invalide."), 400
+    result = analyzer.test_provider(provider, key, model)
+    if not result["ok"]:
+        return jsonify(ok=False, message=result["message"])
+    config.save_settings({"AI_PROVIDER": provider, key_name: key, model_name: result["model"]})
+    return jsonify(ok=True, model=result["model"], ms=result["ms"], sample=result["sample"],
+                   message=f"Connecté : {result['model']} a répondu en {result['ms'] / 1000:.1f} s.")
+
+
+@app.post("/api/settings/ai/clear")
+def settings_ai_clear():
+    data, error = _guard()
+    if error:
+        return error
+    which = {"gemini": "GEMINI_API_KEY", "claude": "ANTHROPIC_API_KEY"}.get(data.get("provider"))
+    if not which:
+        return jsonify(ok=False, message="Fournisseur inconnu."), 400
+    config.save_settings({which: ""})
+    return jsonify(ok=True, message="Clé supprimée.")
+
+
+@app.post("/api/settings/telegram/token")
+def settings_tg_token():
+    data, error = _guard()
+    if error:
+        return error
+    token = _clean(data.get("token"))
+    if not re.fullmatch(r"\d{6,12}:[A-Za-z0-9_-]{30,}", token):
+        return jsonify(ok=False, message="Ça ne ressemble pas à un token. Il ressemble à 123456789:AAH… (avec un « : » au milieu).")
+    try:
+        bot = telegram.get_me(token)
+    except telegram.TelegramError as exc:
+        return jsonify(ok=False, message=str(exc))
+    changed = token != config.setting("TELEGRAM_BOT_TOKEN")
+    config.save_settings({"TELEGRAM_BOT_TOKEN": token, "TELEGRAM_BOT_NAME": bot,
+                          **({"TELEGRAM_CHAT_ID": "", "TELEGRAM_CHAT_NAME": ""} if changed else {})})
+    return jsonify(ok=True, bot=bot, message=f"Connecté au bot @{bot}.")
+
+
+@app.post("/api/settings/telegram/chat")
+def settings_tg_chat():
+    """Trouve la conversation de l'utilisateur (il doit avoir envoyé /start à son bot)."""
+    data, error = _guard()
+    if error:
+        return error
+    token = config.setting("TELEGRAM_BOT_TOKEN")
+    if not token:
+        return jsonify(ok=False, message="Connecte d'abord ton bot (étape 1)."), 400
+    try:
+        chats = telegram.find_chats(token)
+    except telegram.TelegramError as exc:
+        return jsonify(ok=False, message=str(exc))
+    chosen = data.get("chat_id")
+    if chosen is not None:
+        chats = [c for c in chats if str(c["id"]) == str(chosen)]
+    if not chats:
+        return jsonify(ok=False, message="Rien reçu pour l'instant. Ouvre ton bot dans Telegram, envoie-lui « /start », puis réessaie.")
+    if len(chats) > 1:
+        return jsonify(ok=True, choose=chats, message="Plusieurs conversations trouvées : choisis la tienne.")
+    config.save_settings({"TELEGRAM_CHAT_ID": str(chats[0]["id"]), "TELEGRAM_CHAT_NAME": chats[0]["name"]})
+    return jsonify(ok=True, name=chats[0]["name"], message=f"Compte trouvé : {chats[0]['name']}.")
+
+
+@app.post("/api/settings/telegram/test")
+def settings_tg_test():
+    data, error = _guard()
+    if error:
+        return error
+    if not telegram.enabled():
+        return jsonify(ok=False, message="Termine d'abord les étapes 1 et 2."), 400
+    sent = telegram.send("✅ <b>Harden Defense</b> : le bot Telegram est bien relié. Les alertes arriveront ici.")
+    return jsonify(ok=sent, message="Message envoyé : regarde ton téléphone." if sent else "Telegram n'a pas accepté le message. Refais l'étape 2.")
+
+
+@app.post("/api/settings/telegram/clear")
+def settings_tg_clear():
+    data, error = _guard()
+    if error:
+        return error
+    config.save_settings({"TELEGRAM_BOT_TOKEN": "", "TELEGRAM_CHAT_ID": "", "TELEGRAM_BOT_NAME": "", "TELEGRAM_CHAT_NAME": ""})
+    return jsonify(ok=True, message="Telegram déconnecté.")
+
+
 def main():
-    print(f"[dashboard] http://localhost:{config.DASHBOARD_PORT}  (depuis Kali : http://IP_UBUNTU:{config.DASHBOARD_PORT})",
-          flush=True)
+    print(f"[dashboard] http://localhost:{config.DASHBOARD_PORT}  (depuis un autre appareil : http://IP_UBUNTU:{config.DASHBOARD_PORT})\n"
+          f"[dashboard] Réglages (clés, Telegram) : http://localhost:{config.DASHBOARD_PORT}/#reglages\n"
+          f"[dashboard] Pour les modifier depuis un autre appareil, le code est : {ADMIN_PIN}", flush=True)
     app.run(host=config.DASHBOARD_HOST, port=config.DASHBOARD_PORT, threaded=True)
 
 

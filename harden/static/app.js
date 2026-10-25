@@ -24,6 +24,8 @@ const ICONS = {
   "pulse": '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
   "board": '<rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="13" rx="1.5"/>',
   "bell": '<path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 21h4"/>',
+  "gear": '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>',
+  "send": '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',
   "database": '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
 };
 const icon = (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -316,7 +318,7 @@ function renderGuardians(e) {
 }
 
 /* ---------- navigation : une vue à la fois ---------- */
-const TABS = ["attaques", "alertes", "sources", "gardiens"];
+const TABS = ["attaques", "alertes", "sources", "gardiens", "reglages"];
 let currentTab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "attaques";
 let seenAlerts = null, alertTotal = 0;
 function setTab(name, { scroll = false } = {}) {
@@ -328,6 +330,7 @@ function setTab(name, { scroll = false } = {}) {
     $("panel-" + t).hidden = !on;
   });
   if (name === "alertes") seenAlerts = alertTotal;
+  if (name === "reglages" && typeof openSettings === "function") openSettings();
   try { history.replaceState(null, "", "#" + name); } catch (e) { /* sans importance */ }
   updateBadges();
   if (scroll) {

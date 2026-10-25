@@ -8,6 +8,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from pathlib import Path  # noqa: E402
 
 from harden import analyzer, collector, config, db, parsers, telegram  # noqa: E402
 
@@ -27,8 +28,22 @@ EVE_LINE = json.dumps({
               "category": "Web Application Attack", "severity": 1}})
 
 
+from harden import config as _config  # noqa: E402
+_TMP = tempfile.mkdtemp()
+_config.SETTINGS_FILE = Path(_TMP) / "settings.json"      # les tests n'écrivent jamais dans data/settings.json
+
+
+def reset_settings():
+    try:
+        _config.SETTINGS_FILE.unlink()
+    except FileNotFoundError:
+        pass
+    _config._cache["stamp"] = None
+
+
 class MockServer:
-    """Faux serveur HTTP qui garde les requêtes reçues (imite Telegram / l'API de Claude)."""
+    """Faux serveur HTTP qui garde les requêtes reçues (imite Telegram / Google / Claude).
+    `reply` : un dictionnaire (réponse 200) ou une fonction (chemin, corps) -> (code, dictionnaire)."""
     def __init__(self, reply):
         self.requests = []
         outer = self
@@ -37,8 +52,9 @@ class MockServer:
             def do_POST(self):
                 body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
                 outer.requests.append((self.path, dict(self.headers), body))
-                data = json.dumps(reply).encode()
-                self.send_response(200); self.send_header("Content-Type", "application/json")
+                code, payload = reply(self.path, body) if callable(reply) else (200, reply)
+                data = json.dumps(payload).encode()
+                self.send_response(code); self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
 
             def log_message(self, *a):
@@ -157,39 +173,162 @@ class TelegramTests(unittest.TestCase):
         self.assertFalse(telegram.send("x"))
 
 
+def gemini_answer(items_ids):
+    text = json.dumps([{"id": i, "summary": f"Explication IA {i}.", "advice": "Bloquer.", "level": 3} for i in items_ids])
+    return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
+
+
+def ids_in(body):
+    """Les id envoyés à l'IA, relus dans le texte de la requête."""
+    prompt = json.loads(body)["contents"][0]["parts"][0]["text"]
+    return [a["id"] for a in json.loads(prompt.split("Alertes :\n")[1])]
+
+
 class AnalyzerTests(unittest.TestCase):
     def setUp(self):
+        reset_settings()
         self.conn = db.connect(":memory:")
-        self.alert = parsers.parse_suricata(EVE_LINE)
-        self._old = (config.ANTHROPIC_API_KEY, config.ANTHROPIC_API_BASE)
+        self.saved = {k: getattr(_config, k) for k in ("GEMINI_API_KEY", "GEMINI_API_BASE", "AI_PROVIDER", "ANTHROPIC_API_KEY")}
+        _config.GEMINI_API_KEY, _config.AI_PROVIDER, _config.ANTHROPIC_API_KEY = "k" * 30, "", ""
+        self.now = [1000.0]
+        self.worker = analyzer.Worker(self.conn, clock=lambda: self.now[0])
 
     def tearDown(self):
-        config.ANTHROPIC_API_KEY, config.ANTHROPIC_API_BASE = self._old
+        for k, v in self.saved.items():
+            setattr(_config, k, v)
 
-    def test_local_fallback_without_key(self):
-        config.ANTHROPIC_API_KEY = ""
-        r = analyzer.get_analysis(self.conn, self.alert)
+    def add_alerts(self, n, first_sid=1000001):
+        for i in range(n):
+            db.insert_alert(self.conn, {"ts": "2026-10-25T10:00:00.000000Z", "engine": "suricata", "sid": first_sid + i,
+                                        "signature": f"Règle {i}", "category": "c", "severity": 2, "proto": "TCP",
+                                        "src_ip": "10.1.1.1", "src_port": 1, "dst_ip": "10.2.2.2", "dst_port": 80, "action": "alert"})
+
+    def server(self, fn):
+        srv = MockServer(fn)
+        _config.GEMINI_API_BASE = srv.url
+        self.addCleanup(srv.close)
+        return srv
+
+    # -- lecture de la réponse --
+    def test_parse_keeps_only_valid_entries(self):
+        text = 'bla [{"id":1,"summary":"a","advice":"b","level":9},{"id":2,"summary":"","advice":"b","level":2},' \
+               '{"id":99,"summary":"x","advice":"y","level":1},{"id":3}]'
+        out = analyzer.parse_batch(text, {1, 2, 3})
+        self.assertEqual(list(out), [1])
+        self.assertEqual(out[1]["level"], 5)                       # 9 borné à 5
+
+    def test_parse_rejects_garbage(self):
+        with self.assertRaises(analyzer.ProviderError):
+            analyzer.parse_batch("pas de json", {1})
+
+    def test_prompt_never_contains_ip_addresses(self):
+        self.add_alerts(1)
+        prompt = analyzer.build_prompt(self.worker.pending())
+        self.assertNotIn("10.1.1.1", prompt)
+        self.assertNotIn("10.2.2.2", prompt)
+
+    # -- texte intégré --
+    def test_builtin_text_is_instant_and_stored_as_local(self):
+        r = analyzer.get_analysis(self.conn, {"sid": 1000004})
         self.assertEqual((r["source"], r["level"]), ("local", 5))
+        self.assertEqual(self.conn.execute("SELECT source FROM analyses").fetchone()["source"], "local")
 
-    def test_claude_answer_is_used_and_cached(self):
-        reply = {"content": [{"type": "text", "text": 'Voici : {"summary": "Injection SQL.", "advice": "Bloquer.", "level": 9}'}]}
-        server = MockServer(reply)
-        try:
-            config.ANTHROPIC_API_KEY, config.ANTHROPIC_API_BASE = "sk-test", server.url
-            r = analyzer.get_analysis(self.conn, self.alert)
-            self.assertEqual((r["source"], r["summary"], r["level"]), ("claude", "Injection SQL.", 5))   # 9 borné à 5
-            headers = {k.lower(): v for k, v in server.requests[0][1].items()}
-            self.assertEqual(headers.get("x-api-key"), "sk-test")
-            analyzer.get_analysis(self.conn, self.alert)
-            self.assertEqual(len(server.requests), 1)                # 2e fois : lu en base, pas de nouvel appel payant
-        finally:
-            server.close()
+    # -- le lot --
+    def test_one_request_explains_everything_and_replaces_builtin_text(self):
+        self.add_alerts(3)
+        for sid in (1000001, 1000002, 1000003):
+            analyzer.get_analysis(self.conn, {"sid": sid})
+        srv = self.server(lambda path, body: (200, gemini_answer(ids_in(body))))
+        self.assertEqual(self.worker.run_once(), 3)
+        self.assertEqual(len(srv.requests), 1)                     # UNE requête pour 3 alertes
+        self.assertEqual({r["source"] for r in self.conn.execute("SELECT source FROM analyses")}, {"gemini"})
+        self.assertEqual(self.worker.run_once(), 0)                # plus rien à expliquer : aucun nouvel appel
+        self.assertEqual(len(srv.requests), 1)
 
-    def test_api_failure_falls_back_and_retries_later(self):
-        config.ANTHROPIC_API_KEY, config.ANTHROPIC_API_BASE = "sk-test", "http://127.0.0.1:9"
-        r = analyzer.get_analysis(self.conn, self.alert)
-        self.assertEqual(r["source"], "local")
-        self.assertIsNone(self.conn.execute("SELECT 1 FROM analyses").fetchone())   # pas mis en cache : on réessaiera
+    def test_batches_are_capped_at_batch_size(self):
+        self.add_alerts(45)
+        srv = self.server(lambda path, body: (200, gemini_answer(ids_in(body))))
+        self.worker.run_once()
+        self.assertEqual(len(ids_in(srv.requests[0][2])), analyzer.BATCH_SIZE)
+        self.assertEqual(self.worker.pending_count(), 25)
+
+    def test_key_is_sent_in_header_not_in_url(self):
+        self.add_alerts(1)
+        srv = self.server(lambda path, body: (200, gemini_answer(ids_in(body))))
+        self.worker.run_once()
+        path, headers, _ = srv.requests[0]
+        self.assertNotIn("k" * 30, path)
+        self.assertEqual({k.lower(): v for k, v in headers.items()}["x-goog-api-key"], "k" * 30)
+
+    # -- limites de débit --
+    def test_rate_limited_primary_falls_back_to_second_model(self):
+        self.add_alerts(2)
+
+        def reply(path, body):
+            if "gemini-3.5-flash-lite" in path:
+                return 429, {"error": {"code": 429, "details": [{"@type": "x.RetryInfo", "retryDelay": "30s"}]}}
+            return 200, gemini_answer(ids_in(body))
+        srv = self.server(reply)
+        self.assertEqual(self.worker.run_once(), 2)
+        self.assertEqual(len(srv.requests), 2)
+        self.assertIn("gemini-3.1-flash-lite", srv.requests[1][0])
+        self.now[0] += 5                                           # le modèle principal se repose encore 30 s
+        self.add_alerts(1, first_sid=1000100)
+        self.worker.run_once()
+        self.assertIn("gemini-3.1-flash-lite", srv.requests[2][0])
+
+    def test_all_models_limited_keeps_builtin_text_and_backs_off(self):
+        self.add_alerts(1)
+        analyzer.get_analysis(self.conn, {"sid": 1000001})
+        srv = self.server(lambda path, body: (429, {"error": {"code": 429}}))
+        self.assertEqual(self.worker.run_once(), 0)
+        self.assertEqual(self.conn.execute("SELECT source FROM analyses").fetchone()["source"], "local")
+        count = len(srv.requests)
+        self.worker.run_once()                                     # pause : aucun nouvel appel tout de suite
+        self.assertEqual(len(srv.requests), count)
+        status = json.loads(db.get_state(self.conn, "ai_status"))
+        self.assertFalse(status["ok"])
+        self.assertIn("Limite", status["error"])
+
+    def test_never_exceeds_requests_per_minute_budget(self):
+        self.add_alerts(1)
+        srv = self.server(lambda path, body: (500, {"error": {}}))
+        for _ in range(40):
+            self.worker.wait_until = 0
+            self.worker.model_wait.clear()
+            self.worker.run_once()
+        self.assertLessEqual(len(srv.requests), analyzer.MAX_RPM)
+
+    def test_refused_key_stops_immediately(self):
+        self.add_alerts(1)
+        srv = self.server(lambda path, body: (400, {"error": {"code": 400, "message": "API key not valid. Please pass a valid API key."}}))
+        self.worker.run_once()
+        self.assertEqual(len(srv.requests), 1)                     # pas de modèle de secours avec une mauvaise clé
+        self.assertIn("Clé refusée", json.loads(db.get_state(self.conn, "ai_status"))["error"])
+
+    def test_missing_ids_are_retried_later_not_in_a_loop(self):
+        self.add_alerts(2)
+        srv = self.server(lambda path, body: (200, gemini_answer(ids_in(body)[:1])))   # l'IA « oublie » une alerte
+        self.assertEqual(self.worker.run_once(), 1)
+        self.assertEqual(self.worker.pending(), [])                # mise en pause (pas de boucle infinie)
+        self.now[0] += 200
+        self.assertEqual(len(self.worker.pending()), 1)            # réessayée plus tard
+
+    def test_provider_none_makes_no_call(self):
+        self.add_alerts(1)
+        _config.AI_PROVIDER = "none"
+        srv = self.server(lambda path, body: (200, gemini_answer([])))
+        self.assertEqual(self.worker.run_once(), 0)
+        self.assertEqual(srv.requests, [])
+
+    # -- test d'une clé avant enregistrement --
+    def test_test_provider_ok_and_refused(self):
+        self.server(lambda path, body: (200, gemini_answer([1])))
+        self.assertTrue(analyzer.test_provider("gemini", "k" * 30)["ok"])
+        self.server(lambda path, body: (400, {"error": {"message": "API key not valid"}}))
+        bad = analyzer.test_provider("gemini", "k" * 30)
+        self.assertFalse(bad["ok"])
+        self.assertIn("Clé refusée", bad["message"])
 
 
 @unittest.skipIf(dashboard is None, "Flask n'est pas installé (utilise .venv/bin/python)")
@@ -225,6 +364,138 @@ class DashboardStateTests(unittest.TestCase):
         self.assertEqual(self.states()["scan"], "stopped")
         self.add("suricata", 1000001, "alert", "2026-10-25T10:20:00.000000Z")      # retour en mode IDS
         self.assertEqual(self.states()["scan"], "passed")
+
+
+@unittest.skipIf(dashboard is None, "Flask n'est pas installé (utilise .venv/bin/python)")
+class SettingsPageTests(unittest.TestCase):
+    """La page Réglages : les secrets ne fuient jamais, et seule la machine locale (ou un code) peut modifier."""
+    REMOTE = {"REMOTE_ADDR": "192.168.56.1"}
+    KEY = "AIzaSyTESTKEY_0123456789abcdefghijk"
+    TOKEN = "123456789:AAH-test_token_0123456789abcdefghij"
+
+    def setUp(self):
+        reset_settings()
+        self.db_path = os.path.join(_TMP, "t.db")
+        self.saved = {k: getattr(_config, k) for k in ("DB_PATH", "GEMINI_API_BASE", "TELEGRAM_API_BASE", "GEMINI_API_KEY",
+                                                        "AI_PROVIDER", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")}
+        _config.DB_PATH = self.db_path
+        _config.GEMINI_API_KEY = _config.AI_PROVIDER = _config.TELEGRAM_BOT_TOKEN = _config.TELEGRAM_CHAT_ID = ""
+        self.client = dashboard.app.test_client()
+        dashboard._pin_fail.update(count=0, until=0.0)
+        telegram._sent.clear()
+        self.google = MockServer(lambda path, body: (200, gemini_answer([1])))
+        self.tg = MockServer(self.telegram_reply)
+        _config.GEMINI_API_BASE, _config.TELEGRAM_API_BASE = self.google.url, self.tg.url
+        self.chats = [{"message": {"chat": {"id": 42, "first_name": "Awa"}}}]
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(_config, k, v)
+        self.google.close(); self.tg.close()
+        reset_settings()
+
+    def telegram_reply(self, path, body):
+        if "getMe" in path:
+            return 200, {"ok": True, "result": {"username": "harden_bot"}}
+        if "getUpdates" in path:
+            return 200, {"ok": True, "result": self.chats}
+        return 200, {"ok": True, "result": {}}
+
+    def post(self, url, payload, remote=False, headers=None):
+        return self.client.post(url, json=payload, headers=headers or {}, environ_base=self.REMOTE if remote else {})
+
+    def test_secrets_are_never_returned(self):
+        self.assertTrue(self.post("/api/settings/ai", {"provider": "gemini", "key": self.KEY}).get_json()["ok"])
+        self.assertTrue(self.post("/api/settings/telegram/token", {"token": self.TOKEN}).get_json()["ok"])
+        raw = self.client.get("/api/settings").get_data(as_text=True)
+        self.assertNotIn(self.KEY, raw)
+        self.assertNotIn(self.TOKEN, raw)
+        view = json.loads(raw)
+        self.assertTrue(view["ai"]["key_set"])
+        self.assertEqual(view["ai"]["key_hint"], "…" + self.KEY[-4:])
+        self.assertEqual(view["telegram"]["bot"], "harden_bot")
+
+    def test_key_is_tested_before_being_saved(self):
+        self.google.close()
+        self.google = MockServer(lambda path, body: (400, {"error": {"message": "API key not valid"}}))
+        _config.GEMINI_API_BASE = self.google.url
+        r = self.post("/api/settings/ai", {"provider": "gemini", "key": self.KEY}).get_json()
+        self.assertFalse(r["ok"])
+        self.assertIn("Clé refusée", r["message"])
+        self.assertFalse(_config.SETTINGS_FILE.exists())           # une clé qui ne marche pas n'est pas enregistrée
+
+    def test_saved_settings_override_env_and_file_is_private(self):
+        _config.GEMINI_MODEL = "autre-modele"
+        self.post("/api/settings/ai", {"provider": "gemini", "key": self.KEY})
+        self.assertEqual(_config.setting("GEMINI_API_KEY"), self.KEY)
+        self.assertEqual(oct(_config.SETTINGS_FILE.stat().st_mode & 0o777), "0o600")
+        _config.GEMINI_MODEL = "gemini-3.5-flash-lite"
+
+    def test_pasted_key_with_spaces_and_quotes_is_cleaned(self):
+        r = self.post("/api/settings/ai", {"provider": "gemini", "key": f'  "{self.KEY[:10]} {self.KEY[10:]}"\n'}).get_json()
+        self.assertTrue(r["ok"])
+        self.assertEqual(_config.setting("GEMINI_API_KEY"), self.KEY)
+
+    def test_remote_client_needs_the_pin(self):
+        r = self.post("/api/settings/ai", {"provider": "gemini", "key": self.KEY}, remote=True)
+        self.assertEqual(r.status_code, 403)
+        self.assertFalse(_config.SETTINGS_FILE.exists())
+        r = self.post("/api/settings/ai", {"provider": "gemini", "key": self.KEY}, remote=True,
+                      headers={"X-Admin-Pin": dashboard.ADMIN_PIN})
+        self.assertTrue(r.get_json()["ok"])
+
+    def test_wrong_pin_is_locked_after_five_tries(self):
+        for _ in range(5):
+            self.post("/api/settings/ai", {"provider": "none"}, remote=True, headers={"X-Admin-Pin": "000000"})
+        r = self.post("/api/settings/ai", {"provider": "none"}, remote=True, headers={"X-Admin-Pin": dashboard.ADMIN_PIN})
+        self.assertEqual(r.status_code, 429)
+
+    def test_view_tells_remote_clients_they_cannot_edit(self):
+        view = self.client.get("/api/settings", environ_base=self.REMOTE).get_json()
+        self.assertEqual((view["can_edit"], view["needs_pin"]), (False, True))
+        view = self.client.get("/api/settings").get_json()
+        self.assertEqual((view["can_edit"], view["needs_pin"]), (True, False))
+
+    def test_cross_site_and_non_json_requests_are_refused(self):
+        r = self.post("/api/settings/ai", {"provider": "none"}, headers={"Origin": "http://evil.example"})
+        self.assertEqual(r.status_code, 403)
+        r = self.client.post("/api/settings/ai", data="provider=none", content_type="application/x-www-form-urlencoded")
+        self.assertEqual(r.status_code, 400)
+
+    def test_telegram_three_steps(self):
+        bad = self.post("/api/settings/telegram/token", {"token": "pas-un-token"}).get_json()
+        self.assertFalse(bad["ok"])
+        self.assertEqual(self.tg.requests, [])                      # format invalide : on n'appelle même pas Telegram
+        self.assertTrue(self.post("/api/settings/telegram/token", {"token": self.TOKEN}).get_json()["ok"])
+        self.chats = []
+        self.assertFalse(self.post("/api/settings/telegram/chat", {}).get_json()["ok"])     # pas encore de /start
+        self.chats = [{"message": {"chat": {"id": 42, "first_name": "Awa"}}}]
+        found = self.post("/api/settings/telegram/chat", {}).get_json()
+        self.assertEqual((found["ok"], found["name"]), (True, "Awa"))
+        self.assertTrue(self.post("/api/settings/telegram/test", {}).get_json()["ok"])
+        self.assertIn("/sendMessage", self.tg.requests[-1][0])
+        self.assertIn("chat_id=42", self.tg.requests[-1][2])
+
+    def test_several_chats_ask_the_user_to_choose(self):
+        self.post("/api/settings/telegram/token", {"token": self.TOKEN})
+        self.chats = [{"message": {"chat": {"id": 1, "first_name": "A"}}}, {"message": {"chat": {"id": 2, "first_name": "B"}}}]
+        r = self.post("/api/settings/telegram/chat", {}).get_json()
+        self.assertEqual([c["id"] for c in r["choose"]], [1, 2])
+        self.assertEqual(self.post("/api/settings/telegram/chat", {"chat_id": 2}).get_json()["name"], "B")
+
+    def test_changing_the_bot_forgets_the_old_chat(self):
+        self.post("/api/settings/telegram/token", {"token": self.TOKEN})
+        self.post("/api/settings/telegram/chat", {})
+        self.post("/api/settings/telegram/token", {"token": "987654321:" + "B" * 35})
+        self.assertFalse(self.client.get("/api/settings").get_json()["telegram"]["chat_set"])
+
+    def test_telegram_test_refused_until_configured(self):
+        self.assertEqual(self.post("/api/settings/telegram/test", {}).status_code, 400)
+
+    def test_clear_buttons(self):
+        self.post("/api/settings/ai", {"provider": "gemini", "key": self.KEY})
+        self.post("/api/settings/ai/clear", {"provider": "gemini"})
+        self.assertFalse(self.client.get("/api/settings").get_json()["ai"]["key_set"])
 
 
 if __name__ == "__main__":

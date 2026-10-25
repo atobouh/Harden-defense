@@ -67,6 +67,7 @@
     <button role="tab" id="tab-alertes" aria-controls="panel-alertes" data-tab="alertes"><span class="t-ico" data-i="bell"></span><span class="t-label">Alertes</span><span class="t-badge" id="b-alertes" hidden></span></button>
     <button role="tab" id="tab-sources" aria-controls="panel-sources" data-tab="sources"><span class="t-ico" data-i="monitor"></span><span class="t-label">Sources</span><span class="t-badge" id="b-sources" hidden></span></button>
     <button role="tab" id="tab-gardiens" aria-controls="panel-gardiens" data-tab="gardiens"><span class="t-ico" data-i="shield-check"></span><span class="t-label">Gardiens</span></button>
+    <button role="tab" id="tab-reglages" aria-controls="panel-reglages" data-tab="reglages"><span class="t-ico" data-i="gear"></span><span class="t-label">Réglages</span></button>
   </nav>
 
   <main class="panels" id="panels">
@@ -95,10 +96,16 @@
       <div class="sec-head"><div><h2>Les deux gardiens</h2><p>Deux outils surveillent le même trafic. Un seul peut bloquer.</p></div></div>
       <div class="card narrow"><div id="guardians" class="guardians"></div></div>
     </section>
+
+    <section role="tabpanel" id="panel-reglages" aria-labelledby="tab-reglages" hidden>
+      <div class="sec-head"><div><h2>Réglages</h2><p>Tout est facultatif : sans rien régler, l'application fonctionne avec des explications intégrées.</p></div></div>
+      <div class="settings" id="settings"><div class="empty">Chargement…</div></div>
+    </section>
   </main>
 
   <footer>Harden Defense · Snort + Suricata · mise à jour automatique</footer>
 </div>
 <script src="/static/app.js"></script>
+<script src="/static/settings.js"></script>
 </body>
 </html>

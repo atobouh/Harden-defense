@@ -232,3 +232,64 @@ footer{text-align:center;color:var(--ink-3);font-size:12.5px}
   .tabs button[aria-selected=true] .t-badge.dot{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- RÉGLAGES ---------- */
+.settings{display:grid;gap:20px;max-width:760px}
+.set-card{display:grid;gap:18px}
+.set-card h3{font-size:17px}
+.set-head{display:flex;align-items:center;gap:14px}
+.set-head>div{flex:1;min-width:0}
+.set-ico{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:22px;flex:none}
+.set-ico.tg{background:#e3f3fc;color:#1d8fcf} .set-ico.ai{background:#eceafd;color:var(--accent)}
+.help{color:var(--ink-2);font-size:14px;line-height:1.5}
+.help code,.help b{font-weight:600}
+code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--track);padding:1px 6px;border-radius:6px;color:var(--ink)}
+.state{font-size:12.5px;font-weight:620;padding:5px 11px;border-radius:99px;background:var(--wait-tint);color:var(--wait-ink);white-space:nowrap}
+.state.on{background:var(--stopped-tint);color:var(--stopped-ink)}
+.steps{list-style:none;padding:0;display:grid;gap:4px}
+.step{display:flex;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
+.step:first-child{border-top:0}
+.num{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:13.5px;font-weight:650;flex:none;background:#eceafd;color:var(--accent)}
+.step.done .num{background:var(--stopped);color:#fff}
+.step.locked .num{background:var(--wait-tint);color:var(--wait-ink)}
+.step.locked{opacity:.55}
+.step-body{display:grid;gap:10px;flex:1;min-width:0;justify-items:start}
+.step-body h4{font-size:15px}
+.row{display:flex;gap:8px;width:100%;align-items:stretch}
+.row.end{align-items:center;justify-content:space-between;flex-wrap:wrap}
+.input{flex:1;min-width:0;width:100%;padding:12px 14px;border:1px solid #d7dbec;border-radius:12px;background:#fafbfe;font:14px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
+select.input{font-family:var(--font);flex:none}
+.input:focus{outline:2px solid var(--accent);outline-offset:1px;background:#fff}
+.btn{padding:11px 18px;border-radius:12px;border:0;background:var(--accent);color:#fff;font-weight:620;font-size:14.5px;cursor:pointer;white-space:nowrap;box-shadow:0 6px 14px -8px rgba(79,70,229,.7)}
+.btn:hover{background:#4338ca}
+.btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+.btn.ghost{background:#fafbfe;color:var(--ink-2);box-shadow:0 0 0 1px var(--hair)}
+.btn.ghost:hover{background:#f1f2fa}
+.link.danger{color:#b4342f;justify-self:start}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{color:#3730a3}
+.choices{display:flex;gap:8px;flex-wrap:wrap}
+.msg{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;line-height:1.45;padding:9px 12px;border-radius:10px}
+.msg.ok{background:var(--stopped-tint);color:var(--stopped-ink)}
+.msg.err{background:var(--passed-tint);color:var(--passed-ink)}
+.msg svg{margin-top:2px}
+.radio{display:inline-flex;padding:4px;border-radius:14px;background:var(--track);justify-self:start}
+.radio button{border:0;background:none;padding:9px 16px;border-radius:10px;font-size:14px;font-weight:580;color:var(--ink-3);cursor:pointer}
+.radio button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(30,36,90,.12),0 0 0 1px var(--hair)}
+.radio small{font-weight:500;color:var(--stopped-ink);margin-left:3px}
+.adv summary{cursor:pointer;color:var(--ink-3);font-size:13.5px;font-weight:550}
+.adv{display:grid;gap:8px}
+.ai-status{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink-2)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--wait);flex:none}
+.dot.ok{background:var(--stopped)} .dot.warn{background:var(--passed)}
+.notes{margin:0;padding:14px 16px 14px 32px;border-radius:14px;background:#f6f5ff;color:var(--ink-2);font-size:13.5px;display:grid;gap:6px}
+.center{text-align:center}
+@media (max-width:720px){
+  .tabs{grid-template-columns:repeat(5,1fr)}
+  .tabs button{font-size:11px}
+  .row{flex-direction:column}
+  .set-head{flex-wrap:wrap}
+  .state{order:3}
+  .btn{width:100%}
+  .radio{width:100%} .radio button{flex:1;padding:9px 6px}
+}

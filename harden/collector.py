@@ -58,6 +58,13 @@ def poll(conn):
     return new
 
 
+def _ai_label():
+    provider = analyzer.active_provider()
+    if provider == "none":
+        return "explications intégrées (aucune clé : voir la page Réglages)"
+    return f"{provider} ({', '.join(analyzer.models_for(provider))}), par lots de {analyzer.BATCH_SIZE}"
+
+
 def main():
     conn = db.connect(config.DB_PATH)
     if "--once" in sys.argv:
@@ -65,9 +72,9 @@ def main():
         return
     print(f"[collecteur] Snort : {config.SNORT_ALERT}\n[collecteur] Suricata : {config.SURICATA_EVE}\n"
           f"[collecteur] Base : {config.DB_PATH}\n"
-          f"[collecteur] Telegram : {'actif' if telegram.enabled() else 'désactivé (pas de token)'}\n"
-          f"[collecteur] IA : {'Claude (' + config.ANTHROPIC_MODEL + ')' if config.ANTHROPIC_API_KEY else 'explications locales (pas de clé API)'}",
-          flush=True)
+          f"[collecteur] Telegram : {'actif' if telegram.enabled() else 'désactivé (voir la page Réglages)'}\n"
+          f"[collecteur] IA : {_ai_label()}", flush=True)
+    analyzer.start_worker(config.DB_PATH)
     while True:
         n = poll(conn)
         if n:

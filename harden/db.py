@@ -42,6 +42,11 @@ CREATE TABLE IF NOT EXISTS attack_results ( -- ce que Kali a observé de son cô
     detail   TEXT
 );
 
+CREATE TABLE IF NOT EXISTS app_state (      -- petites informations partagées entre le collecteur et le dashboard
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS offsets (        -- où le collecteur s'est arrêté dans chaque log
     path  TEXT PRIMARY KEY,
     inode INTEGER NOT NULL,
@@ -87,3 +92,13 @@ def insert_alert(conn, alert):
     cur = conn.execute(INSERT_ALERT, alert)
     conn.commit()
     return cur.rowcount == 1
+
+
+def set_state(conn, key, value):
+    conn.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", (key, value))
+    conn.commit()
+
+
+def get_state(conn, key, default=None):
+    row = conn.execute("SELECT value FROM app_state WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
