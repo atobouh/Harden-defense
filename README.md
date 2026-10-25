@@ -30,7 +30,7 @@ en direct **la différence entre un IDS (qui prévient) et un IPS (qui bloque)**
 |---|---|---|
 | Scan de ports | `nmap -sS` | 20 SYN en 5 s depuis la même IP |
 | Bruteforce SSH | connexions répétées | 5 connexions au port 22 en 30 s |
-| Flood ICMP | `ping` en rafale | 20 pings en 5 s |
+| Flood ICMP | `ping` en rafale | 10 pings en 5 s |
 | Injection SQL | `curl` avec `UNION SELECT` / `OR 1=1` | contenu de la requête HTTP |
 
 ## Installation

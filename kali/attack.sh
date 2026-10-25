@@ -80,8 +80,8 @@ icmp() {
   echo "${B}[3/4] Flood ICMP${N} ${D}(ping en rafale)${N}"
   iv=0.2; [ "$(id -u)" = 0 ] && iv=0.05
   loss="$(ping -c 60 -i "$iv" -W 1 -q "$TARGET" 2>/dev/null | grep -o '[0-9.]*% packet loss' | grep -o '^[0-9.]*')"
-  loss="${loss:-100}"
-  if [ "${loss%.*}" -lt 30 ]; then report icmp 1 "${loss}% de pertes seulement"
+  loss="${loss:-100}"; loss="${loss%.*}"
+  if [ "$loss" -lt 30 ]; then report icmp 1 "${loss}% de pertes seulement"
   else report icmp 0 "${loss}% des pings perdus"; fi
 }
 
