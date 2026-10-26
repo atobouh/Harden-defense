@@ -30,7 +30,8 @@
 | Réglages | Page qui teste puis enregistre la clé de l'IA et guide la connexion Telegram en 3 étapes ; les secrets ne sont jamais renvoyés au navigateur | `harden/dashboard.py`, `static/settings.js` |
 | Telegram | Envoie l'alerte (⛔ bloquée ou 👁 détectée) avec l'analyse | `harden/telegram.py` |
 | Dashboard | Page web qui lit la base et se rafraîchit toute seule | `harden/dashboard.py`, `static/` |
-| `attack.sh` | Lance les attaques depuis Kali et mesure si elles passent | `kali/attack.sh` |
+| `attack.sh` | Lance les attaques depuis Kali (ou depuis l'attaquant intégré) et mesure si elles passent | `kali/attack.sh` |
+| Mode une machine | `lab-net.sh` crée un **câble virtuel** (`veth`) entre la machine (`10.88.0.1`) et un **espace réseau isolé** (`hdlab`, `10.88.0.2`) où vit l'attaquant. Il a sa propre carte réseau et ne voit rien d'autre : c'est exactement comme une 2e machine. `labd.py` (droits administrateur) est le seul à pouvoir changer de mode ou lancer les attaques ; le dashboard, lui, n'a pas ces droits et lui envoie des **ordres d'une liste fermée** par un socket réservé | `install.sh`, `scripts/lab-net.sh`, `harden/labd.py`, `labctl.py` |
 
 Requêtes SQL à montrer (ouvrir la base : `sqlite3 data/harden.db`) :
 
@@ -55,6 +56,11 @@ Le dashboard montre d'abord l'essentiel, le reste s'ouvre **à la demande** :
   - **Gardiens** : Snort le guetteur (IDS) et Suricata le videur (IPS).
 
 ## 5. Démonstration en 5 minutes
+
+*(Version « une machine » : tout se fait dans le dashboard. Version deux VM, ci-dessous.)*
+Sur le dashboard : **Lancer la démonstration** en Surveillance (4 attaques passées, toutes repérées), puis clic sur **Protection**, **Lancer la démonstration** (4 attaques arrêtées). Le reste est identique.
+
+**Version deux VM :**
 
 1. `sudo ./scripts/lab.sh ids` puis ouvrir le dashboard. *« Mode IDS : on observe seulement. »*
 2. Sur Kali : `./attack.sh IP all http://IP:5000`. Les 4 attaques sont **passées**, mais détectées par les deux sondes.
@@ -88,6 +94,10 @@ Mesures faites pendant le développement sur un banc d'essai simulé (Kali dans 
 **Pourquoi deux outils ?** Pour *voir* la différence entre détecter (Snort, IDS) et bloquer (Suricata, IPS) sur les mêmes attaques.
 
 **Pourquoi un IPS peut-il être dangereux ?** Un faux positif coupe du trafic légitime. C'est pourquoi `attack.sh` commence par un contrôle de trafic normal.
+
+**Pourquoi pas un vrai Kali dans ce mode ?** Un espace réseau isolé (*network namespace*) se comporte comme une machine séparée : son adresse, sa carte, sa table de routage. Les paquets traversent le même chemin que ceux d'une vraie 2e machine, donc les sondes voient exactement la même chose. Le laboratoire à deux VM reste disponible pour montrer un vrai Kali.
+
+**Est-ce sûr d'avoir un bouton qui lance des attaques ?** Les attaques ne visent que `10.88.0.1`, la machine elle-même, depuis un compte sans droits (`harden-attacker`, seul `nmap` est autorisé en administrateur). Le dashboard n'accepte l'ordre que de la machine locale (ou avec un code à 6 chiffres), vérifie l'origine de la requête, et le programme qui exécute n'accepte qu'une liste fermée de commandes.
 
 **Où est l'intelligence ?** L'IA (Gemini ou Claude) analyse chaque type d'alerte comme un analyste SOC (explication, gravité, conseil). Les demandes sont envoyées par lots pour rester sous la limite gratuite (15 requêtes par minute), et sans IA l'application fonctionne quand même. La détection elle-même reste à base de règles ; le machine learning est la suite logique du projet.
 

@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import analyzer, config, db, knowledge, parsers, telegram
+from . import analyzer, config, db, knowledge, labctl, parsers, telegram
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app = Flask(__name__, static_folder=STATIC, static_url_path="/static")
@@ -169,12 +169,16 @@ LOCAL_ADDRS = ("127.0.0.1", "::1")
 _pin_fail = {"count": 0, "until": 0.0}
 
 
+def _is_local():
+    return request.remote_addr in LOCAL_ADDRS or request.remote_addr in config.TRUSTED_ADDRS
+
+
 def _check_access():
     """None si autorisé, sinon (message, code HTTP)."""
     origin = request.headers.get("Origin")
     if origin and urlparse(origin).netloc != request.host:
         return "Origine refusée.", 403
-    if request.remote_addr in LOCAL_ADDRS:
+    if _is_local():
         return None
     if time.time() < _pin_fail["until"]:
         return "Trop d'essais. Patiente une minute.", 429
@@ -188,7 +192,7 @@ def _check_access():
 
 
 def _can_edit():
-    return _check_access() is None if request.remote_addr in LOCAL_ADDRS or request.headers.get("X-Admin-Pin") else False
+    return _check_access() is None if _is_local() or request.headers.get("X-Admin-Pin") else False
 
 
 def _guard():
@@ -222,7 +226,7 @@ def settings_view():
         conn.close()
     tg_token = config.setting("TELEGRAM_BOT_TOKEN")
     return jsonify(
-        can_edit=_can_edit(), needs_pin=request.remote_addr not in LOCAL_ADDRS,
+        can_edit=_can_edit(), needs_pin=not _is_local(),
         ai={"provider": provider, "choice": config.setting("AI_PROVIDER") or "",
             "key_set": bool(key_name and config.setting(key_name)),
             "key_hint": config.hint(config.setting(key_name)) if key_name else "",
@@ -339,7 +343,38 @@ def settings_tg_clear():
     return jsonify(ok=True, message="Telegram déconnecté.")
 
 
+# ---------- pilotage du laboratoire (mode une machine) ----------
+# Le dashboard n'a pas les droits système : il transmet des ordres au « chef d'orchestre » (labd) via un socket réservé.
+@app.get("/api/lab")
+def lab_status():
+    r = labctl.call({"cmd": "status"})
+    r["can_edit"] = _can_edit()
+    return jsonify(r)
+
+
+@app.post("/api/lab/mode")
+def lab_mode():
+    data, error = _guard()
+    if error:
+        return error
+    r = labctl.call({"cmd": "mode", "value": data.get("mode")})
+    return jsonify(r), 200 if r.get("ok") else (503 if r.get("available") is False else 409)
+
+
+@app.post("/api/lab/demo")
+def lab_demo():
+    data, error = _guard()
+    if error:
+        return error
+    r = labctl.call({"cmd": "demo", "scenario": data.get("scenario", "all")})
+    return jsonify(r), 200 if r.get("ok") else (503 if r.get("available") is False else 409)
+
+
 def main():
+    pin_file = os.environ.get("PIN_FILE")          # permet à la commande « sudo harden pin » de l'afficher
+    if pin_file:
+        with open(os.open(pin_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as f:
+            f.write(ADMIN_PIN + "\n")
     print(f"[dashboard] http://localhost:{config.DASHBOARD_PORT}  (depuis un autre appareil : http://IP_UBUNTU:{config.DASHBOARD_PORT})\n"
           f"[dashboard] Réglages (clés, Telegram) : http://localhost:{config.DASHBOARD_PORT}/#reglages\n"
           f"[dashboard] Pour les modifier depuis un autre appareil, le code est : {ADMIN_PIN}", flush=True)

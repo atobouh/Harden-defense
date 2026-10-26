@@ -1,0 +1,18 @@
+[Unit]
+Description=Harden Defense - collecteur d'alertes (lit Snort et Suricata)
+After=network.target harden-lab.service
+Wants=harden-lab.service
+
+[Service]
+User=harden
+Group=harden
+WorkingDirectory=@PREFIX@
+Environment=PYTHONDONTWRITEBYTECODE=1 DB_PATH=/var/lib/harden-defense/harden.db SETTINGS_FILE=/var/lib/harden-defense/settings.json
+EnvironmentFile=-/etc/default/harden-defense
+ExecStart=@PREFIX@/.venv/bin/python -m harden.collector
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

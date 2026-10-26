@@ -6,3 +6,13 @@ __pycache__/
 logs/
 .iface
 data/
+
+# fichiers volumineux déjà téléchargés (voir hors-ligne/LISEZMOI.md) et état de Vagrant
+hors-ligne/*
+!hors-ligne/LISEZMOI.md
+*.box
+*.exe
+*.msi
+.vagrant/
+.hd-box
+*.log

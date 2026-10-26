@@ -4,13 +4,14 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from pathlib import Path  # noqa: E402
 
-from harden import analyzer, collector, config, db, parsers, telegram  # noqa: E402
+from harden import analyzer, collector, config, db, labctl, labd, parsers, telegram  # noqa: E402
 
 try:
     from harden import dashboard
@@ -496,6 +497,160 @@ class SettingsPageTests(unittest.TestCase):
         self.post("/api/settings/ai", {"provider": "gemini", "key": self.KEY})
         self.post("/api/settings/ai/clear", {"provider": "gemini"})
         self.assertFalse(self.client.get("/api/settings").get_json()["ai"]["key_set"])
+
+
+class FakeProc:
+    def __init__(self, code=0):
+        self.code = code
+        self.release = threading.Event()
+
+    def wait(self):
+        self.release.wait(5)
+        return self.code
+
+
+class LabDaemonTests(unittest.TestCase):
+    """Le chef d'orchestre : liste fermée de commandes, jamais de texte libre, jamais deux actions en même temps."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.saved = {k: getattr(labd, k) for k in ("MODE_FILE", "DEMO_LOG", "STATE_DIR")}
+        labd.MODE_FILE = os.path.join(self.dir, "mode")
+        labd.DEMO_LOG = os.path.join(self.dir, "demo.log")
+        labd.STATE_DIR = self.dir
+        os.environ["LAB_SETTLE"] = "0"
+        self.calls, self.procs = [], []
+
+        def fake_run(cmd, **kw):
+            self.calls.append(cmd)
+            with open(labd.MODE_FILE, "w") as f:
+                f.write(cmd[-1])
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        def fake_popen(cmd, **kw):
+            self.calls.append(cmd)
+            proc = FakeProc()
+            self.procs.append(proc)
+            return proc
+        self.lab = labd.Lab(popen=fake_popen, run=fake_run)
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(labd, k, v)
+        os.environ.pop("LAB_SETTLE", None)
+
+    def wait_idle(self):
+        for _ in range(100):
+            if not self.lab.busy:
+                return
+            time.sleep(0.02)
+        self.fail("le changement de mode ne se termine pas")
+
+    def test_unknown_commands_are_refused(self):
+        for bad in (None, "x", {"cmd": "rm"}, {"cmd": "mode", "value": "ids; reboot"}, {"cmd": "demo", "scenario": "../etc"}):
+            self.assertFalse(self.lab.handle(bad)["ok"])
+        self.assertEqual(self.calls, [])
+
+    def test_mode_change_runs_lab_script_and_remembers(self):
+        self.assertTrue(self.lab.handle({"cmd": "mode", "value": "ips"})["ok"])
+        self.wait_idle()
+        self.assertTrue(self.calls[0][0].endswith("scripts/lab.sh"))
+        self.assertEqual(self.calls[0][1], "ips")
+        self.assertEqual(self.lab.status()["mode"], "ips")
+        self.assertEqual(open(os.path.join(self.dir, "mode")).read(), "ips")
+
+    def test_demo_needs_probes_and_runs_attacker_in_namespace(self):
+        self.assertFalse(self.lab.handle({"cmd": "demo"})["ok"])          # aucun mode choisi : sondes arrêtées
+        self.lab.handle({"cmd": "mode", "value": "ids"}); self.wait_idle()
+        self.assertTrue(self.lab.handle({"cmd": "demo", "scenario": "all"})["ok"])
+        cmd = self.calls[-1]
+        self.assertEqual(cmd[:4], ["ip", "netns", "exec", "hdlab"])
+        self.assertIn("runuser", cmd)
+        self.assertEqual(cmd[-2:-1], ["all"])
+
+    def test_one_action_at_a_time(self):
+        self.lab.handle({"cmd": "mode", "value": "ids"}); self.wait_idle()
+        self.assertTrue(self.lab.handle({"cmd": "demo"})["ok"])
+        self.assertFalse(self.lab.handle({"cmd": "demo"})["ok"])                       # déjà en cours
+        self.assertFalse(self.lab.handle({"cmd": "mode", "value": "ips"})["ok"])       # pas pendant une démo
+        self.procs[0].release.set()
+        for _ in range(100):
+            if not self.lab.demo["running"]:
+                break
+            time.sleep(0.02)
+        self.assertFalse(self.lab.demo["running"])
+        self.assertEqual(self.lab.demo["code"], 0)
+
+    def test_progress_is_read_from_the_log_without_colours(self):
+        with open(labd.DEMO_LOG, "w") as f:
+            f.write("\x1b[1m[0/4] Contrôle\x1b[0m\n   → OK\n\x1b[1m[1/4] Scan de ports\x1b[0m\n[2/4] Bruteforce SSH\n")
+        lines, step = self.lab.demo_lines()
+        self.assertEqual(step, 2)
+        self.assertNotIn("\x1b", "".join(lines))
+
+    def test_failed_mode_change_reports_error(self):
+        self.lab.run = lambda cmd, **kw: type("R", (), {"returncode": 1, "stdout": "", "stderr": "boum\nsnort introuvable"})()
+        self.lab.handle({"cmd": "mode", "value": "ids"}); self.wait_idle()
+        self.assertEqual(self.lab.status()["error"], "snort introuvable")
+
+    def test_socket_roundtrip_and_missing_socket(self):
+        path = os.path.join(self.dir, "lab.sock")
+        server = labd.make_server(self.lab, path=path)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            self.assertTrue(labctl.call({"cmd": "status"}, path=path)["available"])
+            self.assertFalse(labctl.call({"cmd": "nope"}, path=path)["ok"])
+        finally:
+            server.shutdown(); server.server_close()
+        self.assertEqual(labctl.call({"cmd": "status"}, path=os.path.join(self.dir, "absent.sock")), {"ok": False, "available": False})
+
+
+@unittest.skipIf(dashboard is None, "Flask n'est pas installé (utilise .venv/bin/python)")
+class DashboardLabTests(unittest.TestCase):
+    """Les boutons du dashboard : réservés à cette machine (ou au code), et inertes si le laboratoire n'est pas installé."""
+    REMOTE = {"REMOTE_ADDR": "10.88.0.2"}
+
+    def setUp(self):
+        self.client = dashboard.app.test_client()
+        dashboard._pin_fail.update(count=0, until=0.0)
+        self.sent = []
+        self.real_call = labctl.call
+        labctl.call = lambda req, **kw: (self.sent.append(req), {"ok": True, "available": True, "message": "ok"})[1]
+
+    def tearDown(self):
+        labctl.call = self.real_call
+        config.TRUSTED_ADDRS = ()
+
+    def post(self, path, body, **kw):
+        return self.client.post(path, json=body, **kw)
+
+    def test_local_can_switch_and_start(self):
+        self.assertEqual(self.post("/api/lab/mode", {"mode": "ips"}).status_code, 200)
+        self.assertEqual(self.post("/api/lab/demo", {"scenario": "all"}).status_code, 200)
+        self.assertEqual(self.sent, [{"cmd": "mode", "value": "ips"}, {"cmd": "demo", "scenario": "all"}])
+
+    def test_the_isolated_attacker_cannot_control_the_lab(self):
+        self.assertEqual(self.post("/api/lab/mode", {"mode": "ids"}, environ_overrides=self.REMOTE).status_code, 403)
+        self.assertEqual(self.post("/api/lab/demo", {}, environ_overrides=self.REMOTE).status_code, 403)
+        self.assertEqual(self.post("/api/lab/mode", {"mode": "ids"}, environ_overrides=self.REMOTE, headers={"X-Admin-Pin": "000000"}).status_code, 403)
+        self.assertEqual(self.sent, [])
+
+    def test_remote_with_pin_is_allowed(self):
+        r = self.post("/api/lab/mode", {"mode": "ids"}, environ_overrides=self.REMOTE, headers={"X-Admin-Pin": dashboard.ADMIN_PIN})
+        self.assertEqual(r.status_code, 200)
+
+    def test_trusted_address_counts_as_this_machine(self):
+        config.TRUSTED_ADDRS = ("10.0.2.2",)
+        self.assertEqual(self.post("/api/lab/mode", {"mode": "ids"}, environ_overrides={"REMOTE_ADDR": "10.0.2.2"}).status_code, 200)
+        self.assertEqual(self.post("/api/lab/mode", {"mode": "ids"}, environ_overrides=self.REMOTE).status_code, 403)
+
+    def test_foreign_origin_is_refused(self):
+        self.assertEqual(self.post("/api/lab/mode", {"mode": "ids"}, headers={"Origin": "http://evil.example"}).status_code, 403)
+
+    def test_lab_not_installed_is_reported_not_crashed(self):
+        labctl.call = lambda req, **kw: {"ok": False, "available": False}
+        self.assertFalse(self.client.get("/api/lab").get_json()["available"])
+        self.assertEqual(self.post("/api/lab/demo", {}).status_code, 503)
 
 
 if __name__ == "__main__":

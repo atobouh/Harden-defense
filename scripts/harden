@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# La commande « harden » : piloter le laboratoire depuis un terminal (tout se fait aussi depuis le dashboard).
+PREFIX="@PREFIX@"
+URL="http://localhost:5000"
+systemd_on() { [ -d /run/systemd/system ]; }
+need_root() { [ "$EUID" -eq 0 ] || exec sudo "$0" "$@"; }
+
+case "${1:-status}" in
+  status|ids|ips|demo)
+    # le socket du laboratoire est réservé au groupe « harden » ; sinon on passe par sudo
+    if [ "$EUID" -ne 0 ] && ! id -nG | tr ' ' '\n' | grep -qx harden; then exec sudo "$0" "$@"; fi
+    cd "$PREFIX" && python3 -m harden.labctl "$@"
+    rc=$?; [ "${1:-status}" = status ] && echo "Dashboard : $URL"; exit $rc ;;
+  open)  xdg-open "$URL" 2>/dev/null || echo "Ouvre ton navigateur sur $URL" ;;
+  pin)   need_root "$@"; cat /var/lib/harden-defense/pin 2>/dev/null || echo "Le code n'existe pas encore (le dashboard est-il démarré ?)" ;;
+  start|stop|restart)
+    need_root "$@"
+    if systemd_on; then systemctl "$1" harden-lab harden-collector harden-dashboard
+    else case "$1" in restart) "$PREFIX/scripts/services.sh" stop; "$PREFIX/scripts/services.sh" start ;; *) "$PREFIX/scripts/services.sh" "$1" ;; esac; fi ;;
+  logs)  need_root "$@"
+    if systemd_on; then journalctl -u 'harden-*' -n 80 --no-pager; else tail -n 40 /var/log/harden/*.log; fi ;;
+  uninstall) need_root "$@"; exec "$PREFIX/uninstall.sh" ;;
+  *) cat <<TXT
+Utilisation :  harden [commande]
+  status       l'état du laboratoire (par défaut)
+  ids | ips    passer en Surveillance (IDS) ou en Protection (IPS)
+  demo         lancer les 4 attaques de démonstration
+  open         ouvrir le dashboard ($URL)
+  pin          afficher le code pour modifier les réglages depuis un autre appareil
+  start | stop | restart | logs
+  uninstall    tout désinstaller
+TXT
+  ;;
+esac

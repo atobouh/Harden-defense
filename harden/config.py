@@ -46,6 +46,8 @@ ANTHROPIC_MODEL = get("ANTHROPIC_MODEL", "claude-haiku-5-5")
 
 DASHBOARD_HOST = get("DASHBOARD_HOST", "0.0.0.0")
 DASHBOARD_PORT = int(get("DASHBOARD_PORT", "5000"))
+# Adresses traitées comme « cette machine » pour les réglages (ex. 10.0.2.2 quand la VM Vagrant est ouverte depuis le PC hôte).
+TRUSTED_ADDRS = tuple(a.strip() for a in get("TRUSTED_ADDRS").split(",") if a.strip())
 
 
 # ---------- Réglages enregistrés par la page « Réglages » ----------

@@ -19,7 +19,11 @@ en direct **la différence entre un IDS (qui prévient) et un IPS (qui bloque)**
 | Dossier | Contenu |
 |---|---|
 | `config/` | Les règles de détection (Snort et Suricata, mêmes attaques) |
-| `scripts/` | Installation et pilotage du labo (`install_defender.sh`, `lab.sh`, `run_app.sh`…) |
+| `demarrer.bat`, `setup-windows.ps1` | L'installation Windows en un double-clic (`arreter.bat`, `desinstaller.bat` pour la suite) |
+| `install.sh`, `Vagrantfile` | L'installation Ubuntu en une commande, ou `vagrant up` |
+| `hors-ligne/` | Fichiers déjà téléchargés (Dropbox, USB) pour ne rien retélécharger |
+| `scripts/` | Pilotage du labo (`lab.sh`, `lab-net.sh`, `services.sh`, `install_defender.sh`, `run_app.sh`…) |
+| `systemd/` | Les services qui démarrent tout seuls (labo, collecteur, dashboard) |
 | `kali/attack.sh` | Les 4 attaques à lancer depuis Kali |
 | `harden/` | L'application Python : collecteur, base SQL, IA, Telegram, dashboard |
 | `docs/` | `installation.md` + `guide-installation.html/.pdf` + `video/` (installer pas à pas), `ids-vs-ips.md` (le concept), `guide-soutenance.md` (comment tout expliquer) |
@@ -33,7 +37,27 @@ en direct **la différence entre un IDS (qui prévient) et un IPS (qui bloque)**
 | Flood ICMP | `ping` en rafale | 10 pings en 5 s |
 | Injection SQL | `curl` avec `UNION SELECT` / `OR 1=1` | contenu de la requête HTTP |
 
-## Installation
+## Installation en une commande
+
+### Windows 10 / 11 (PC Intel ou AMD) : un double-clic
+
+1. Télécharge le projet (**Code → Download ZIP**) et extrais-le.
+2. Double-clique sur **`demarrer.bat`** et clique sur **Oui** quand Windows le demande.
+
+Le script installe VirtualBox et Vagrant s'ils manquent, crée une machine Ubuntu qui contient tout le laboratoire (sondes, attaquant intégré, dashboard), puis ouvre <http://localhost:5000>. Il vérifie la virtualisation (BIOS), détecte le conflit Hyper-V/WSL2, se relance en administrateur, et reprend tout seul s'il est interrompu. Ensuite : `demarrer.bat` / `arreter.bat` / `desinstaller.bat`.
+
+**Peu de forfait internet ?** Il ne télécharge que ce qui manque et affiche les tailles avant de commencer (environ **1,2 Go** si rien n'est installé : VirtualBox 178 Mo, Vagrant 248 Mo, image Ubuntu 691 Mo, paquets ~150 Mo). Fichiers déjà reçus par Dropbox ou clé USB : à mettre dans `hors-ligne/` ; VM Ubuntu déjà existante : option légère proposée (~150 Mo). Voir [`hors-ligne/LISEZMOI.md`](hors-ligne/LISEZMOI.md) et `voir-les-telechargements.bat`.
+
+### Ubuntu 22.04 / 24.04 (ordinateur ou VM) : une commande
+
+```bash
+git clone https://github.com/atobouh/Harden-defense.git && cd Harden-defense
+sudo ./install.sh          # puis http://localhost:5000 → « Lancer la démonstration »
+```
+
+Mac Intel : installe VirtualBox + Vagrant puis `vagrant up`. `harden uninstall` (Ubuntu) retire tout. Détails, tailles et erreurs probables dans [docs/installation.md](docs/installation.md).
+
+## Installation à la main (deux machines Ubuntu + Kali)
 
 > **Première fois ?** Trois façons de suivre le pas à pas, au choix (10 minutes pour voir le dashboard, 1 à 2 heures pour le laboratoire complet) : la **vidéo** [docs/video/installation.mp4](docs/video/installation.mp4), le **guide illustré** [docs/guide-installation.html](docs/guide-installation.html) (ou son [PDF](docs/guide-installation.pdf)), ou le texte [docs/installation.md](docs/installation.md).
 

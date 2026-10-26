@@ -293,3 +293,23 @@ a:hover{color:#3730a3}
   .btn{width:100%}
   .radio{width:100%} .radio button{flex:1;padding:9px 6px}
 }
+
+/* ---------- pilotage du laboratoire (mode une machine) ---------- */
+.seg[data-live] span{cursor:pointer}
+.seg[data-live] span:not(.on):hover{color:var(--ink);background:rgba(255,255,255,.6)}
+.seg[data-busy] span{cursor:progress;opacity:.55}
+.demo{margin-top:22px;padding-top:20px;border-top:1px solid var(--line);display:grid;gap:16px}
+.demo-main{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.demo-text{color:var(--ink-2);font-size:14.5px;flex:1;min-width:220px}
+.demo .btn{display:inline-flex;align-items:center;gap:9px}
+.play{width:0;height:0;border-left:9px solid currentColor;border-top:6px solid transparent;border-bottom:6px solid transparent}
+.steps{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;counter-reset:s}
+.steps li{counter-increment:s;padding:10px 12px;border-radius:12px;background:var(--track);color:var(--ink-3);font-size:13.5px;font-weight:550;display:flex;gap:8px;align-items:center}
+.steps li::before{content:counter(s);width:22px;height:22px;border-radius:99px;display:grid;place-items:center;background:var(--card);font-size:12px;font-weight:650;flex:none}
+.steps li.done{color:var(--ink-2)}
+.steps li.done::before{content:"✓";background:var(--accent);color:#fff}
+.steps li.now{background:#eceafd;color:#3730a3}
+.steps li.now::before{background:var(--accent);color:#fff;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(1.15)}}
+@media (prefers-reduced-motion:reduce){.steps li.now::before{animation:none}}
+@media (max-width:640px){.steps{grid-template-columns:1fr 1fr}.demo .btn{width:100%;justify-content:center}}

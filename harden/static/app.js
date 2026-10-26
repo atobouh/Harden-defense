@@ -64,7 +64,9 @@ function renderHero(d) {
   if (stopped + passed === 0) {
     tone = "calm"; iconName = "shield";
     title = "Tout est calme";
-    sub = "Aucune attaque détectée pour l'instant. Lance une attaque depuis Kali pour voir la défense réagir.";
+    sub = document.body.dataset.lab
+      ? "Aucune attaque détectée pour l'instant. Clique sur « Lancer la démonstration » pour voir la défense réagir."
+      : "Aucune attaque détectée pour l'instant. Lance une attaque depuis Kali pour voir la défense réagir.";
   } else if (passed === 0) {
     tone = "safe"; iconName = "shield-check";
     title = "Tout est sous contrôle";

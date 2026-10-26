@@ -1,0 +1,19 @@
+[Unit]
+Description=Harden Defense - laboratoire (réseau interne, Snort, Suricata)
+After=network.target
+
+[Service]
+Type=simple
+Environment=HARDEN_HOME=@PREFIX@ LAB_STATE=/var/lib/harden-defense PYTHONDONTWRITEBYTECODE=1
+WorkingDirectory=@PREFIX@
+RuntimeDirectory=harden
+RuntimeDirectoryMode=0755
+ExecStartPre=@PREFIX@/scripts/lab-net.sh up
+ExecStart=/usr/bin/python3 -m harden.labd
+ExecStopPost=-@PREFIX@/scripts/lab.sh stop
+ExecStopPost=-@PREFIX@/scripts/lab-net.sh down
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

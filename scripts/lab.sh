@@ -6,7 +6,7 @@ set -euo pipefail
 [ "$EUID" -eq 0 ] || { echo "Lance avec sudo."; exit 1; }
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-IFACE="$(cat "$REPO_DIR/.iface" 2>/dev/null || ip route show default | awk '{print $5; exit}')"
+IFACE="${HD_IFACE:-$(cat "$REPO_DIR/.iface" 2>/dev/null || ip route show default | awk '{print $5; exit}')}"
 RUN=/run/harden; mkdir -p "$RUN"; chmod 755 "$RUN" /var/log/snort /var/log/suricata
 
 stop_all() {
@@ -15,32 +15,55 @@ stop_all() {
     rm -f "$RUN/$p.pid"
   done
   pkill -x snort 2>/dev/null || true
-  pkill -f 'suricata -D' 2>/dev/null || true
-  sleep 1
-  iptables -D INPUT  -j NFQUEUE --queue-num 0 --queue-bypass 2>/dev/null || true
-  iptables -D OUTPUT -j NFQUEUE --queue-num 0 --queue-bypass 2>/dev/null || true
+  pkill -x Suricata-Main 2>/dev/null || pkill -f 'suricata -D' 2>/dev/null || true
+  # On ATTEND que les anciennes sondes soient vraiment parties : un Snort qui démarre pendant que l'ancien se termine
+  # refuse de se lancer (fichier de verrouillage) sans aucun message.
+  for i in $(seq 40); do
+    pgrep -x snort >/dev/null || pgrep -x Suricata-Main >/dev/null || pgrep -f 'suricata -D' >/dev/null || break
+    [ "$i" = 25 ] && { pkill -9 -x snort 2>/dev/null || true; pkill -9 -x Suricata-Main 2>/dev/null || true; }
+    sleep 0.5
+  done
+  rm -f /var/run/snort_*.pid 2>/dev/null || true
+  for i in $(seq 5); do      # on retire toutes les copies éventuelles de nos règles (anciennes versions comprises)
+    iptables -D INPUT  -i "$IFACE" -j NFQUEUE --queue-num 0 --queue-bypass 2>/dev/null || true
+    iptables -D OUTPUT -o "$IFACE" -j NFQUEUE --queue-num 0 --queue-bypass 2>/dev/null || true
+    iptables -D INPUT  -j NFQUEUE --queue-num 0 --queue-bypass 2>/dev/null || true
+    iptables -D OUTPUT -j NFQUEUE --queue-num 0 --queue-bypass 2>/dev/null || true
+  done
 }
 
 start_snort() {
   # -k none : ne pas ignorer les paquets dont la somme de contrôle semble fausse. Sur une VM, la carte réseau
   # virtuelle ne la calcule souvent pas : sans ce réglage Snort devient "muet" sans aucun message d'erreur.
-  snort -D -q -A fast -k none -c /etc/snort/snort.conf -i "$IFACE" -l /var/log/snort
-  sleep 1; pgrep -x snort | head -1 > "$RUN/snort.pid" || true
+  for try in 1 2 3; do
+    snort -D -q -A fast -k none -m 022 -c /etc/snort/snort.conf -i "$IFACE" -l /var/log/snort
+    sleep 2
+    if pgrep -x snort >/dev/null; then pgrep -x snort | head -1 > "$RUN/snort.pid"; return 0; fi
+    echo "Snort ne démarre pas (essai $try/3), nouvelle tentative…" >&2; rm -f /var/run/snort_*.pid; sleep 2
+  done
+  echo "ERREUR : Snort n'a pas pu démarrer." >&2; return 1
+}
+
+open_logs() {   # le collecteur (compte « harden », sans droits administrateur) doit pouvoir LIRE les journaux des sondes
+  sleep 2; chmod a+r /var/log/snort/alert /var/log/suricata/eve.json 2>/dev/null || true
 }
 
 case "${1:-}" in
   ids)
     stop_all; start_snort
     suricata -D -c /etc/suricata/suricata.yaml -i "$IFACE" --pidfile "$RUN/suricata.pid"
+    open_logs
     echo ids > "$RUN/mode"; chmod 644 "$RUN/mode"
     echo "[+] Mode IDS : Snort et Suricata observent et alertent, rien n'est bloqué." ;;
   ips)
     stop_all; start_snort
     # Tout le trafic passe par Suricata avant d'atteindre Ubuntu. --queue-bypass = si Suricata
     # plante, le trafic continue (on ne se coupe pas soi-même du réseau).
-    iptables -I INPUT  -j NFQUEUE --queue-num 0 --queue-bypass
-    iptables -I OUTPUT -j NFQUEUE --queue-num 0 --queue-bypass
+    # Seul le trafic de la carte du laboratoire passe par Suricata : le reste de la machine (internet, SSH...) n'est pas touché.
+    iptables -I INPUT  -i "$IFACE" -j NFQUEUE --queue-num 0 --queue-bypass
+    iptables -I OUTPUT -o "$IFACE" -j NFQUEUE --queue-num 0 --queue-bypass
     suricata -D -c /etc/suricata/suricata.yaml -q 0 --pidfile "$RUN/suricata.pid"
+    open_logs
     echo ips > "$RUN/mode"; chmod 644 "$RUN/mode"
     echo "[+] Mode IPS : Suricata BLOQUE les attaques (drop). Snort reste en simple alerte." ;;
   stop)

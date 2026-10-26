@@ -1,0 +1,18 @@
+[Unit]
+Description=Harden Defense - dashboard (http://localhost:5000)
+After=network.target harden-lab.service
+Wants=harden-lab.service
+
+[Service]
+User=harden
+Group=harden
+WorkingDirectory=@PREFIX@
+Environment=PYTHONDONTWRITEBYTECODE=1 FLASK_SKIP_DOTENV=1 DB_PATH=/var/lib/harden-defense/harden.db SETTINGS_FILE=/var/lib/harden-defense/settings.json PIN_FILE=/var/lib/harden-defense/pin
+EnvironmentFile=-/etc/default/harden-defense
+ExecStart=@PREFIX@/.venv/bin/python -m harden.dashboard
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

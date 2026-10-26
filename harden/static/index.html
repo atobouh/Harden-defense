@@ -28,7 +28,7 @@
         <h1 id="hero-title">Chargement…</h1>
         <p class="lead" id="hero-sub"></p>
       </div>
-      <div class="mode" role="group" aria-label="Mode actif (lecture seule)">
+      <div class="mode" role="group" aria-label="Mode actif">
         <span class="eyebrow">Mode actif</span>
         <div class="seg" id="seg">
           <span data-m="ids" id="seg-ids"></span>
@@ -47,6 +47,17 @@
       <button class="toggle" id="act-toggle" type="button" aria-expanded="false" aria-controls="act-panel">
         <span id="act-label">Voir l'activité</span><span class="chev" data-i="chevron"></span>
       </button>
+    </div>
+
+    <!-- Mode une machine : les boutons n'apparaissent que si le laboratoire est installé (sinon cette zone reste cachée). -->
+    <div class="demo" id="demo" hidden>
+      <div class="demo-main">
+        <button class="btn" id="demo-go" type="button"><span class="play" aria-hidden="true"></span><span id="demo-go-label">Lancer la démonstration</span></button>
+        <p class="demo-text" id="demo-text">Les 4 attaques sont lancées pour toi, une par une, depuis une machine attaquante isolée.</p>
+      </div>
+      <ol class="steps" id="demo-steps" aria-label="Avancement" hidden>
+        <li>Test des portes</li><li>Mot de passe</li><li>Saturation</li><li>Base de données</li>
+      </ol>
     </div>
 
     <div class="act-panel" id="act-panel" hidden>
@@ -107,5 +118,6 @@
 </div>
 <script src="/static/app.js"></script>
 <script src="/static/settings.js"></script>
+<script src="/static/lab.js"></script>
 </body>
 </html>

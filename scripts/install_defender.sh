@@ -16,9 +16,10 @@ echo "[*] Installation de Snort et Suricata..."
 echo "snort snort/interface string $IFACE"        | debconf-set-selections
 echo "snort snort/address_range string $HOME_NET" | debconf-set-selections
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
+apt-get update -y -o Acquire::Languages=none
 # apache2 + openssh-server = les services que Kali va attaquer (web et SSH) ; python3-venv = pour le dashboard
-apt-get install -y snort suricata iptables python3 python3-pip python3-venv apache2 openssh-server
+# --no-install-recommends : on ne télécharge que le nécessaire (économise plusieurs dizaines de Mo)
+apt-get install -y --no-install-recommends -o Acquire::Languages=none snort suricata iptables python3 python3-venv apache2 openssh-server
 
 # On lance nous-mêmes les moteurs (voir scripts/lab.sh) : on coupe les services auto
 systemctl disable --now snort suricata 2>/dev/null || true

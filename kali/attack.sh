@@ -50,7 +50,7 @@ scan() {
   command -v nmap >/dev/null || { echo "   ${R}nmap est introuvable : installe-le (sudo apt install nmap).${N}"; echo; return; }
   # Le scan "SYN" demande les droits administrateur. Sans eux, on utilise le scan par connexion (même effet pour notre règle).
   if [ "$(id -u)" = 0 ]; then scan_cmd="nmap -sS"
-  elif sudo -n true 2>/dev/null; then scan_cmd="sudo nmap -sS"
+  elif sudo -n "$(command -v nmap)" --version >/dev/null 2>&1; then scan_cmd="sudo nmap -sS"
   else scan_cmd="nmap -sT"; echo "   ${D}(pas de sudo sans mot de passe : scan par connexion à la place du scan SYN)${N}"; fi
   out="$($scan_cmd -Pn -T4 -p 1-500 --max-retries 1 --host-timeout 90s "$TARGET" 2>&1)"
   if ! echo "$out" | grep -q "Nmap done"; then
