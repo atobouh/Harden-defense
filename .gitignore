@@ -16,3 +16,4 @@ hors-ligne/*
 .vagrant/
 .hd-box
 *.log
+docs/captures/*.zip

@@ -26,6 +26,7 @@ en direct **la différence entre un IDS (qui prévient) et un IPS (qui bloque)**
 | `systemd/` | Les services qui démarrent tout seuls (labo, collecteur, dashboard) |
 | `kali/attack.sh` | Les 4 attaques à lancer depuis Kali |
 | `harden/` | L'application Python : collecteur, base SQL, IA, Telegram, dashboard |
+| `docs/captures/` | 22 captures d'écran (PNG haute résolution) + `LISEZ-MOI-guide-des-captures.pdf` : de quoi faire un PowerPoint |
 | `docs/` | `installation.md` + `guide-installation.html/.pdf` + `video/` (installer pas à pas), `ids-vs-ips.md` (le concept), `guide-soutenance.md` (comment tout expliquer) |
 
 ## Ce qu'on détecte
